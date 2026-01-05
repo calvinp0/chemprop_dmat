@@ -1,0 +1,923 @@
+
+     RDKit          3D
+
+  7  6  0  0  0  0  0  0  0  0999 V2000
+   -0.6385   -1.1598    0.2720 C   0  0  0  0  0  2  0  0  0  1  0  0
+   -0.0559   -0.1418    0.0070 C   0  0  0  0  0  2  0  0  0  2  0  0
+    0.6051    1.0903   -0.2614 C   0  0  0  0  0  0  0  0  0  3  0  0
+   -1.1436   -2.0698    0.4902 H   0  0  0  0  0  0  0  0  0  4  0  0
+    0.2541    1.8230    0.4618 H   0  0  0  0  0  0  0  0  0  5  0  0
+    0.3435    1.5455   -1.2139 H   0  0  0  0  0  0  0  0  0  6  0  0
+    1.6788    1.0743   -0.0884 H   0  0  0  0  0  0  0  0  0  7  0  0
+  1  4  1  0
+  1  2  1  0
+  2  3  1  0
+  3  6  1  0
+  3  7  1  0
+  3  5  1  0
+M  RAD  2   1   3   2   3
+M  END
+>  <rmg_smiles>  (1) 
+[CH][C]C
+
+>  <rmg_adjacency_list>  (1) 
+1 C u0 p0 c0 {2,S} {4,S} {5,S} {6,S}
+2 C u0 p1 c0 {1,S} {3,S}
+3 C u0 p1 c0 {2,S} {7,S}
+4 H u0 p0 c0 {1,S}
+5 H u0 p0 c0 {1,S}
+6 H u0 p0 c0 {1,S}
+7 H u0 p0 c0 {3,S}
+
+
+>  <multiplicity>  (1) 
+1
+
+>  <reaction>  (1) 
+rxn_1234
+
+>  <type>  (1) 
+r1h
+
+>  <role_mapnums>  (1) 
+{"r1h_a": 3, "r1h_h": 5}
+
+>  <role_mapidx>  (1) 
+{"r1h_a": 2, "r1h_h": 4}
+
+>  <ordered_mapped_smiles>  (1) 
+[C:1]([C:2][C:3]([H:5])([H:6])[H:7])[H:4]
+
+>  <mol_properties>  (1) 
+{"2": {"label": "donator", "atom_type": "Cs"}, "4": {"label": "d_hydrogen", "atom_type": "H0"}}
+
+>  <level_of_theory>  (1) 
+wb97xd/def2tzvp
+
+>  <lot_method>  (1) 
+wb97xd
+
+>  <lot_basis>  (1) 
+def2tzvp
+
+>  <spin_multiplicity>  (1) 
+1.0
+
+>  <optical_isomers>  (1) 
+1.0
+
+>  <modes>  (1) 
+IdealGasTranslation(mass=(40.0313, 'amu')),         NonlinearRotor(             inertia = ([3.14896, 58.5627, 58.5628
+
+>  <frequency_value>  (1) 
+unknown
+
+>  <frequency_units>  (1) 
+unknown
+
+>  <frequency_list>  (1) 
+unknown
+
+>  <arkane_path>  (1) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtCC/arkane/output.py
+
+>  <path_exists>  (1) 
+True
+
+>  <E0_value>  (1) 
+-306134.23771519226
+
+>  <E0_units>  (1) 
+kJ/mol
+
+>  <thermo_class>  (1) 
+NASA
+
+>  <Cp0_value>  (1) 
+33.257888
+
+>  <Cp0_units>  (1) 
+J/(mol*K)
+
+>  <CpInf_value>  (1) 
+157.97496800000002
+
+>  <CpInf_units>  (1) 
+J/(mol*K)
+
+>  <Tmin_value>  (1) 
+10.0
+
+>  <Tmin_units>  (1) 
+K
+
+>  <Tmax_value>  (1) 
+3000.0
+
+>  <Tmax_units>  (1) 
+K
+
+>  <polynomials>  (1) 
+[{"name": "polynomial1", "class": "NASAPolynomial", "Tmin_value": 10.0, "Tmin_units": "K", "Tmax_value": 432.7570457536586, "Tmax_units": "K", "coeffs": [3.9797872721783007, 0.0012495811779551272, 5.6294196303513694e-05, -1.0182025216581548e-07, 6.043505350989284e-11, -36819443.321551986, 4.877022759632036]}, {"name": "polynomial2", "class": "NASAPolynomial", "Tmin_value": 432.7570457536586, "Tmin_units": "K", "Tmax_value": 3000.0, "Tmax_units": "K", "coeffs": [1.8482488679261548, 0.020955787311649748, -1.2025217015703147e-05, 3.449280939574018e-09, -3.914023780269935e-13, -36819258.87384146, 13.374670545299223]}]
+
+>  <H298_value>  (1) 
+-73164.72574977479
+
+>  <H298_units>  (1) 
+kcal/mol
+
+>  <S298_value>  (1) 
+58.90709306772092
+
+>  <S298_units>  (1) 
+cal/(mol*K)
+
+>  <Cp_T_value_list>  (1) 
+[14.231411982223385, 16.92569828262598, 19.32863505161705, 21.43592113918368, 24.884700514699873, 27.496375671717598, 31.566855118352027, 33.76415845868588, 34.923080757091356]
+
+>  <Cp_T_units>  (1) 
+cal/(mol*K)
+
+>  <T_list>  (1) 
+[300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1500.0, 2000.0, 2400.0]
+
+>  <T_units>  (1) 
+K
+
+>  <yaml_path>  (1) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtCC/rxn_1234_CtCC.yml
+
+>  <frequencies_cm1>  (1) 
+[351.89179573808, 352.26261294536, 684.0272747105199, 684.34315603524, 939.24565111364, 1048.18350623012, 1048.35518086312, 1402.57488462468, 1465.46960317056, 1465.7648835393202, 2230.0054137727598, 3022.8812727906, 3095.33483490192, 3095.7125190945194, 3438.9862482559997]
+
+>  <ZPE_kJmol>  (1) 
+145.49608455161717
+
+>  <E_elec_kJmol>  (1) 
+-306279.7337997439
+
+>  <E0_minus_Eelec_plus_ZPE_kJmol>  (1) 
+0.0
+
+>  <rxn>  (1) 
+rxn_1234
+
+>  <species_type>  (1) 
+r1
+
+>  <species_folder>  (1) 
+rxn_1234_CtCC
+
+>  <frequencies_cm1_list>  (1) 
+[351.89179573808, 352.26261294536, 684.0272747105199, 684.34315603524, 939.24565111364, 1048.18350623012, 1048.35518086312, 1402.57488462468, 1465.46960317056, 1465.7648835393202, 2230.0054137727598, 3022.8812727906, 3095.33483490192, 3095.7125190945194, 3438.9862482559997]
+
+>  <E0_kJmol>  (1) 
+-306134
+
+>  <H298_kJmol>  (1) 
+-306121
+
+$$$$
+
+     RDKit          3D
+
+  8  7  0  0  0  0  0  0  0  0999 V2000
+    0.8721    1.6589   -0.3402 C   0  0  0  0  0  2  0  0  0  1  0  0
+    0.3696    0.5730   -0.1986 C   0  0  0  0  0  2  0  0  0  2  0  0
+   -0.1396   -0.7210   -0.1362 C   0  0  0  0  0  0  0  0  0  3  0  0
+   -1.0105   -1.3316    0.6414 C   0  0  0  0  0  0  0  0  0  4  0  0
+    1.3006    2.6268   -0.4433 H   0  0  0  0  0  0  0  0  0  5  0  0
+   -1.5128   -0.8149    1.4536 H   0  0  0  0  0  0  0  0  0  6  0  0
+   -1.2479   -2.3783    0.4848 H   0  0  0  0  0  0  0  0  0  7  0  0
+    0.2632   -1.3918   -0.8950 H   0  0  0  0  0  0  0  0  0  8  0  0
+  1  5  1  0
+  1  2  1  0
+  2  3  1  0
+  3  4  1  0
+  3  8  1  0
+  4  7  1  0
+  4  6  1  0
+M  RAD  2   1   3   2   3
+M  END
+>  <rmg_smiles>  (2) 
+[CH][C][CH][CH2]
+
+>  <rmg_adjacency_list>  (2) 
+1 C u0 p0 c0 {2,S} {3,S} {5,S}
+2 C u0 p0 c0 {1,S} {6,S} {7,S}
+3 C u0 p1 c0 {1,S} {4,S}
+4 C u0 p1 c0 {3,S} {8,S}
+5 H u0 p0 c0 {1,S}
+6 H u0 p0 c0 {2,S}
+7 H u0 p0 c0 {2,S}
+8 H u0 p0 c0 {4,S}
+
+
+>  <multiplicity>  (2) 
+1
+
+>  <reaction>  (2) 
+rxn_1234
+
+>  <type>  (2) 
+r2h
+
+>  <role_mapnums>  (2) 
+{"r2h_a": 3, "r2h_h": 8}
+
+>  <role_mapidx>  (2) 
+{"r2h_a": 2, "r2h_h": 7}
+
+>  <ordered_mapped_smiles>  (2) 
+[C:1]([C:2][CH:3]([CH:4]([H:6])[H:7])[H:8])[H:5]
+
+>  <mol_properties>  (2) 
+{"2": {"label": "acceptor", "atom_type": "Cs"}, "7": {"label": "a_hydrogen", "atom_type": "H0"}}
+
+>  <level_of_theory>  (2) 
+wb97xd/def2tzvp
+
+>  <lot_method>  (2) 
+wb97xd
+
+>  <lot_basis>  (2) 
+def2tzvp
+
+>  <spin_multiplicity>  (2) 
+1.0
+
+>  <optical_isomers>  (2) 
+1.0
+
+>  <modes>  (2) 
+IdealGasTranslation(mass=(52.0313, 'amu')),         NonlinearRotor(             inertia = ([9.86559, 105.845, 115.711
+
+>  <frequency_value>  (2) 
+unknown
+
+>  <frequency_units>  (2) 
+unknown
+
+>  <frequency_list>  (2) 
+unknown
+
+>  <arkane_path>  (2) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtCC=C/arkane/output.py
+
+>  <path_exists>  (2) 
+True
+
+>  <E0_value>  (2) 
+-406091.886125891
+
+>  <E0_units>  (2) 
+kJ/mol
+
+>  <thermo_class>  (2) 
+NASA
+
+>  <Cp0_value>  (2) 
+33.257888
+
+>  <Cp0_units>  (2) 
+J/(mol*K)
+
+>  <CpInf_value>  (2) 
+182.918384
+
+>  <CpInf_units>  (2) 
+J/(mol*K)
+
+>  <Tmin_value>  (2) 
+10.0
+
+>  <Tmin_units>  (2) 
+K
+
+>  <Tmax_value>  (2) 
+3000.0
+
+>  <Tmax_units>  (2) 
+K
+
+>  <polynomials>  (2) 
+[{"name": "polynomial1", "class": "NASAPolynomial", "Tmin_value": 10.0, "Tmin_units": "K", "Tmax_value": 539.6924259091454, "Tmax_units": "K", "coeffs": [3.952165135673625, 0.002856988610718535, 7.748969027068091e-05, -1.4636771659515447e-07, 8.592251635550374e-11, -48841570.194759525, 7.59056634578395]}, {"name": "polynomial2", "class": "NASAPolynomial", "Tmin_value": 539.6924259091454, "Tmin_units": "K", "Tmax_value": 3000.0, "Tmax_units": "K", "coeffs": [2.1702296891625794, 0.026363759472425752, -1.64707651230591e-05, 5.0606479604362095e-09, -6.036458079288838e-13, -48841527.85434033, 13.698684547881204]}]
+
+>  <H298_value>  (2) 
+-97054.8281313212
+
+>  <H298_units>  (2) 
+kcal/mol
+
+>  <S298_value>  (2) 
+66.12779656879917
+
+>  <S298_units>  (2) 
+cal/(mol*K)
+
+>  <Cp_T_value_list>  (2) 
+[16.94566075459627, 20.518689246869094, 23.50323718540477, 25.98049414422314, 29.93477402200161, 32.8291008840918, 37.12176727992767, 39.42923508788264, 40.74274810859482]
+
+>  <Cp_T_units>  (2) 
+cal/(mol*K)
+
+>  <T_list>  (2) 
+[300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1500.0, 2000.0, 2400.0]
+
+>  <T_units>  (2) 
+K
+
+>  <yaml_path>  (2) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtCC=C/rxn_1234_CtCC=C.yml
+
+>  <frequencies_cm1>  (2) 
+[225.237118496, 321.82126702179994, 559.30222034336, 675.23753350092, 692.86508481736, 707.3338228865999, 885.99904694236, 971.2114677782399, 1012.2485720505599, 1105.4198288723198, 1315.886061945, 1434.5613022452399, 1683.44831818332, 2214.2525494486795, 3131.88779776028, 3144.7221933233595, 3226.7002640735195, 3436.58967037932]
+
+>  <ZPE_kJmol>  (2) 
+159.96902072108773
+
+>  <E_elec_kJmol>  (2) 
+-406251.8551466121
+
+>  <E0_minus_Eelec_plus_ZPE_kJmol>  (2) 
+0.0
+
+>  <rxn>  (2) 
+rxn_1234
+
+>  <species_type>  (2) 
+p0
+
+>  <species_folder>  (2) 
+rxn_1234_CtCC=C
+
+>  <frequencies_cm1_list>  (2) 
+[225.237118496, 321.82126702179994, 559.30222034336, 675.23753350092, 692.86508481736, 707.3338228865999, 885.99904694236, 971.2114677782399, 1012.2485720505599, 1105.4198288723198, 1315.886061945, 1434.5613022452399, 1683.44831818332, 2214.2525494486795, 3131.88779776028, 3144.7221933233595, 3226.7002640735195, 3436.58967037932]
+
+>  <E0_kJmol>  (2) 
+-406092
+
+>  <H298_kJmol>  (2) 
+-406077
+
+$$$$
+
+     RDKit          3D
+
+ 14 12  0  0  0  0  0  0  0  0999 V2000
+    0.8839    3.1461    0.5940 C   0  0  0  0  0  0  0  0  0  1  0  0
+    0.3814    2.0601    0.7356 C   0  0  0  0  0  0  0  0  0  2  0  0
+   -0.1278    0.7662    0.7979 C   0  0  0  0  0  3  0  0  0  3  0  0
+   -0.9987    0.1556    1.5755 C   0  0  0  0  0  0  0  0  0  4  0  0
+    1.3124    4.1140    0.4909 H   0  0  0  0  0  0  0  0  0  5  0  0
+   -1.5010    0.6723    2.3878 H   0  0  0  0  0  0  0  0  0  6  0  0
+   -1.2361   -0.8911    1.4190 H   0  0  0  0  0  0  0  0  0  7  0  0
+   -0.4426   -3.2077   -0.4923 C   0  0  0  0  0  0  0  0  0  8  0  0
+    0.1399   -2.1898   -0.7572 C   0  0  0  0  0  0  0  0  0  9  0  0
+    0.8010   -0.9576   -1.0256 C   0  0  0  0  0  0  0  0  0 10  0  0
+   -0.9477   -4.1177   -0.2741 H   0  0  0  0  0  0  0  0  0 11  0  0
+    0.3816   -0.0821   -0.1615 H   0  0  0  0  0  0  0  0  0 12  0  0
+    0.5394   -0.5024   -1.9782 H   0  0  0  0  0  0  0  0  0 13  0  0
+    1.8747   -0.9736   -0.8527 H   0  0  0  0  0  0  0  0  0 14  0  0
+  1  5  1  0
+  1  2  1  0
+  2  3  1  0
+  3  4  1  0
+  4  7  1  0
+  4  6  1  0
+  8  9  1  0
+  8 11  1  0
+  9 10  1  0
+ 10 12  1  0
+ 10 13  1  0
+ 10 14  1  0
+M  RAD  1   3   2
+M  END
+>  <rmg_smiles>  (3) 
+[CH]CC.[CH]C[C][CH2]
+
+>  <rmg_adjacency_list>  (3) 
+multiplicity 2
+1  C u0 p0 c0 {3,S} {8,S} {9,S} {10,S}
+2  C u0 p0 c0 {4,S} {11,S} {12,S}
+3  C u0 p1 c0 {1,S} {6,S}
+4  C u1 p1 c0 {2,S} {5,S}
+5  C u0 p1 c0 {4,S} {7,S}
+6  C u0 p1 c0 {3,S} {14,S}
+7  C u0 p1 c0 {5,S} {13,S}
+8  H u0 p0 c0 {1,S}
+9  H u0 p0 c0 {1,S}
+10 H u0 p0 c0 {1,S}
+11 H u0 p0 c0 {2,S}
+12 H u0 p0 c0 {2,S}
+13 H u0 p0 c0 {7,S}
+14 H u0 p0 c0 {6,S}
+
+
+>  <multiplicity>  (3) 
+2
+
+>  <reaction>  (3) 
+rxn_1234
+
+>  <type>  (3) 
+ts
+
+>  <role_mapnums>  (3) 
+{"*2": 12, "*1": 10, "*3": 3, "*0": 9, "*4": 2}
+
+>  <role_mapidx>  (3) 
+{"*2": 11, "*1": 9, "*3": 2, "*0": 8, "*4": 1}
+
+>  <ordered_mapped_smiles>  (3) 
+[CH2:1]([CH2:2][CH:3][CH:4]([H:6])[H:7])[H:5].[CH2:8]([CH2:9][C:10]([H:12])([H:13])[H:14])[H:11]
+
+>  <mol_properties>  (3) 
+{"1": {"label": "*4", "atom_type": "C2s"}, "2": {"label": "*3", "atom_type": "C2s"}, "8": {"label": "*0", "atom_type": "C2s"}, "9": {"label": "*1", "atom_type": "Cs"}, "11": {"label": "*2", "atom_type": "H0"}}
+
+>  <level_of_theory>  (3) 
+wb97xd/def2tzvp
+
+>  <lot_method>  (3) 
+wb97xd
+
+>  <lot_basis>  (3) 
+def2tzvp
+
+>  <spin_multiplicity>  (3) 
+2.0
+
+>  <optical_isomers>  (3) 
+1.0
+
+>  <modes>  (3) 
+IdealGasTranslation(mass=(91.0548, 'amu')),         NonlinearRotor(             inertia = ([86.2329, 443.895, 526.826
+
+>  <frequency_value>  (3) 
+-1696.87
+
+>  <frequency_units>  (3) 
+cm^-1
+
+>  <frequency_list>  (3) 
+unknown
+
+>  <arkane_path>  (3) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/rxns/TS0/arkane/output.py
+
+>  <path_exists>  (3) 
+True
+
+>  <E0_value>  (3) 
+-710458.0
+
+>  <E0_units>  (3) 
+kJ/mol
+
+>  <thermo_class>  (3) 
+unknown
+
+>  <Cp0_value>  (3) 
+unknown
+
+>  <Cp0_units>  (3) 
+unknown
+
+>  <CpInf_value>  (3) 
+unknown
+
+>  <CpInf_units>  (3) 
+unknown
+
+>  <Tmin_value>  (3) 
+unknown
+
+>  <Tmin_units>  (3) 
+unknown
+
+>  <Tmax_value>  (3) 
+unknown
+
+>  <Tmax_units>  (3) 
+unknown
+
+>  <polynomials>  (3) 
+unknown
+
+>  <H298_value>  (3) 
+unknown
+
+>  <H298_units>  (3) 
+unknown
+
+>  <S298_value>  (3) 
+unknown
+
+>  <S298_units>  (3) 
+unknown
+
+>  <Cp_T_value_list>  (3) 
+unknown
+
+>  <Cp_T_units>  (3) 
+unknown
+
+>  <T_list>  (3) 
+unknown
+
+>  <T_units>  (3) 
+unknown
+
+>  <yaml_path>  (3) 
+unknown
+
+>  <frequencies_cm1>  (3) 
+unknown
+
+>  <ZPE_kJmol>  (3) 
+unknown
+
+>  <E_elec_kJmol>  (3) 
+unknown
+
+>  <E0_minus_Eelec_plus_ZPE_kJmol>  (3) 
+unknown
+
+>  <rxn>  (3) 
+unknown
+
+>  <species_type>  (3) 
+unknown
+
+>  <species_folder>  (3) 
+unknown
+
+>  <frequencies_cm1_list>  (3) 
+[]
+
+>  <ts_imag_freq_cm1>  (3) 
+-1717.4835
+
+>  <ts_freq_out_path>  (3) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/rxns/TS0/geometry/freq.out
+
+>  <E0_kJmol>  (3) 
+-710458
+
+>  <H298_kJmol>  (3) 
+unknown
+
+$$$$
+
+     RDKit          3D
+
+  6  5  0  0  0  0  0  0  0  0999 V2000
+    1.4968   -0.0097    0.1113 C   0  0  0  0  0  0  0  0  0  1  0  0
+    0.2829   -0.0018    0.0210 C   0  0  0  0  0  0  0  0  0  2  0  0
+   -1.0795    0.0070   -0.0803 C   0  0  0  0  0  3  0  0  0  3  0  0
+    2.5571   -0.0165    0.1902 H   0  0  0  0  0  0  0  0  0  4  0  0
+   -1.6181    0.9389   -0.1832 H   0  0  0  0  0  0  0  0  0  5  0  0
+   -1.6393   -0.9179   -0.0591 H   0  0  0  0  0  0  0  0  0  6  0  0
+  1  4  1  0
+  1  2  1  0
+  2  3  1  0
+  3  6  1  0
+  3  5  1  0
+M  RAD  1   3   2
+M  END
+>  <rmg_smiles>  (4) 
+[CH]C[CH2]
+
+>  <rmg_adjacency_list>  (4) 
+multiplicity 2
+1 C u1 p0 c0 {2,S} {4,S} {5,S}
+2 C u0 p1 c0 {1,S} {3,S}
+3 C u0 p1 c0 {2,S} {6,S}
+4 H u0 p0 c0 {1,S}
+5 H u0 p0 c0 {1,S}
+6 H u0 p0 c0 {3,S}
+
+
+>  <multiplicity>  (4) 
+2
+
+>  <reaction>  (4) 
+rxn_1234
+
+>  <type>  (4) 
+r1
+
+>  <role_mapnums>  (4) 
+{}
+
+>  <role_mapidx>  (4) 
+{}
+
+>  <ordered_mapped_smiles>  (4) 
+[CH2:1]([CH2:2][C:3]([H:5])[H:6])[H:4]
+
+>  <level_of_theory>  (4) 
+wb97xd/def2tzvp
+
+>  <lot_method>  (4) 
+wb97xd
+
+>  <lot_basis>  (4) 
+def2tzvp
+
+>  <spin_multiplicity>  (4) 
+2.0
+
+>  <optical_isomers>  (4) 
+1.0
+
+>  <modes>  (4) 
+IdealGasTranslation(mass=(39.0235, 'amu')),         NonlinearRotor(             inertia = ([1.74527, 52.5377, 54.2829
+
+>  <frequency_value>  (4) 
+unknown
+
+>  <frequency_units>  (4) 
+unknown
+
+>  <frequency_list>  (4) 
+unknown
+
+>  <arkane_path>  (4) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtC[CH2]/arkane/output.py
+
+>  <path_exists>  (4) 
+True
+
+>  <E0_value>  (4) 
+-304448.46556643327
+
+>  <E0_units>  (4) 
+kJ/mol
+
+>  <thermo_class>  (4) 
+NASA
+
+>  <Cp0_value>  (4) 
+33.257888
+
+>  <Cp0_units>  (4) 
+J/(mol*K)
+
+>  <CpInf_value>  (4) 
+133.031552
+
+>  <CpInf_units>  (4) 
+J/(mol*K)
+
+>  <Tmin_value>  (4) 
+10.0
+
+>  <Tmin_units>  (4) 
+K
+
+>  <Tmax_value>  (4) 
+3000.0
+
+>  <Tmax_units>  (4) 
+K
+
+>  <polynomials>  (4) 
+[{"name": "polynomial1", "class": "NASAPolynomial", "Tmin_value": 10.0, "Tmin_units": "K", "Tmax_value": 545.4322858033976, "Tmax_units": "K", "coeffs": [3.9499603218219184, 0.003017565134064686, 5.5663880593738125e-05, -1.145891938777454e-07, 7.087527216200762e-11, -36616690.41912999, 5.464661756584002]}, {"name": "polynomial2", "class": "NASAPolynomial", "Tmin_value": 545.4322858033976, "Tmin_units": "K", "Tmax_value": 3000.0, "Tmax_units": "K", "coeffs": [3.789373911177466, 0.015460066047789113, -9.533910331026645e-06, 2.9656464623318287e-09, -3.6191150968379614e-13, -36616840.46347278, 4.606005615672744]}]
+
+>  <H298_value>  (4) 
+-72761.72685205255
+
+>  <H298_units>  (4) 
+kcal/mol
+
+>  <S298_value>  (4) 
+60.54560432912815
+
+>  <S298_units>  (4) 
+cal/(mol*K)
+
+>  <Cp_T_value_list>  (4) 
+[14.596350865656005, 16.978505208172123, 18.840244425047544, 20.322925848209742, 22.70561515204646, 24.480922661541676, 27.23477345925829, 28.831290583038445, 29.744408163505042]
+
+>  <Cp_T_units>  (4) 
+cal/(mol*K)
+
+>  <T_list>  (4) 
+[300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1500.0, 2000.0, 2400.0]
+
+>  <T_units>  (4) 
+K
+
+>  <yaml_path>  (4) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtC[CH2]/rxn_1234_CtCCH2.yml
+
+>  <frequencies_cm1>  (4) 
+[355.94331707688, 407.51437683008004, 504.51054447508, 653.44172209524, 683.5053838262, 1024.2589293752399, 1075.37676809732, 1445.76135530216, 1997.3313501752, 3133.58394313432, 3230.4359040876, 3427.03082681388]
+
+>  <ZPE_kJmol>  (4) 
+107.29725110288972
+
+>  <E_elec_kJmol>  (4) 
+-304555.76281753613
+
+>  <E0_minus_Eelec_plus_ZPE_kJmol>  (4) 
+0.0
+
+>  <rxn>  (4) 
+rxn_1234
+
+>  <species_type>  (4) 
+p1
+
+>  <species_folder>  (4) 
+rxn_1234_CtC[CH2]
+
+>  <frequencies_cm1_list>  (4) 
+[355.94331707688, 407.51437683008004, 504.51054447508, 653.44172209524, 683.5053838262, 1024.2589293752399, 1075.37676809732, 1445.76135530216, 1997.3313501752, 3133.58394313432, 3230.4359040876, 3427.03082681388]
+
+>  <E0_kJmol>  (4) 
+-304448
+
+>  <H298_kJmol>  (4) 
+-304435
+
+$$$$
+
+     RDKit          3D
+
+  7  6  0  0  0  0  0  0  0  0999 V2000
+    1.3002    0.7433    2.1279 C   0  0  0  0  0  0  0  0  0  1  0  0
+    0.5758    0.3292    1.2319 C   0  0  0  0  0  0  0  0  0  2  0  0
+   -0.2057   -0.1176    0.2652 C   0  0  0  0  0  3  0  0  0  3  0  0
+   -0.9747   -0.5572   -0.6858 C   0  0  0  0  0  0  0  0  0  4  0  0
+    1.9293    1.1030    2.9060 H   0  0  0  0  0  0  0  0  0  5  0  0
+   -1.9977   -0.8727   -0.4932 H   0  0  0  0  0  0  0  0  0  6  0  0
+   -0.6274   -0.6280   -1.7143 H   0  0  0  0  0  0  0  0  0  7  0  0
+  1  5  1  0
+  1  2  1  0
+  2  3  1  0
+  3  4  1  0
+  4  7  1  0
+  4  6  1  0
+M  RAD  1   3   2
+M  END
+>  <rmg_smiles>  (5) 
+[CH]C[C][CH2]
+
+>  <rmg_adjacency_list>  (5) 
+multiplicity 2
+1 C u0 p0 c0 {2,S} {5,S} {6,S}
+2 C u1 p1 c0 {1,S} {3,S}
+3 C u0 p1 c0 {2,S} {4,S}
+4 C u0 p1 c0 {3,S} {7,S}
+5 H u0 p0 c0 {1,S}
+6 H u0 p0 c0 {1,S}
+7 H u0 p0 c0 {4,S}
+
+
+>  <multiplicity>  (5) 
+2
+
+>  <reaction>  (5) 
+rxn_1234
+
+>  <type>  (5) 
+r2
+
+>  <role_mapnums>  (5) 
+{}
+
+>  <role_mapidx>  (5) 
+{}
+
+>  <ordered_mapped_smiles>  (5) 
+[CH2:1]([CH2:2][CH:3][CH:4]([H:6])[H:7])[H:5]
+
+>  <level_of_theory>  (5) 
+wb97xd/def2tzvp
+
+>  <lot_method>  (5) 
+wb97xd
+
+>  <lot_basis>  (5) 
+def2tzvp
+
+>  <spin_multiplicity>  (5) 
+2.0
+
+>  <optical_isomers>  (5) 
+1.0
+
+>  <modes>  (5) 
+IdealGasTranslation(mass=(51.0235, 'amu')),         NonlinearRotor(             inertia = ([1.72772, 120.695, 122.423
+
+>  <frequency_value>  (5) 
+unknown
+
+>  <frequency_units>  (5) 
+unknown
+
+>  <frequency_list>  (5) 
+unknown
+
+>  <arkane_path>  (5) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtC[C]=C/arkane/output.py
+
+>  <path_exists>  (5) 
+True
+
+>  <E0_value>  (5) 
+-404373.411595965
+
+>  <E0_units>  (5) 
+kJ/mol
+
+>  <thermo_class>  (5) 
+NASA
+
+>  <Cp0_value>  (5) 
+33.257888
+
+>  <Cp0_units>  (5) 
+J/(mol*K)
+
+>  <CpInf_value>  (5) 
+157.97496800000002
+
+>  <CpInf_units>  (5) 
+J/(mol*K)
+
+>  <Tmin_value>  (5) 
+10.0
+
+>  <Tmin_units>  (5) 
+K
+
+>  <Tmax_value>  (5) 
+3000.0
+
+>  <Tmax_units>  (5) 
+K
+
+>  <polynomials>  (5) 
+[{"name": "polynomial1", "class": "NASAPolynomial", "Tmin_value": 10.0, "Tmin_units": "K", "Tmax_value": 324.93226259134735, "Tmax_units": "K", "coeffs": [3.8609566162366087, 0.012109208955520711, 9.288884241662323e-05, -3.603523434637311e-07, 3.9424643436642235e-10, -48634890.058021046, 7.523490676155964]}, {"name": "polynomial2", "class": "NASAPolynomial", "Tmin_value": 324.93226259134735, "Tmin_units": "K", "Tmax_value": 3000.0, "Tmax_units": "K", "coeffs": [4.571614488902504, 0.01908818583620549, -1.1931476325918439e-05, 3.6686757850678527e-09, -4.3673157574215903e-13, -48635019.266648516, 3.616273583899776]}]
+
+>  <H298_value>  (5) 
+-96643.6300947726
+
+>  <H298_units>  (5) 
+kcal/mol
+
+>  <S298_value>  (5) 
+69.25662789424544
+
+>  <S298_units>  (5) 
+cal/(mol*K)
+
+>  <Cp_T_value_list>  (5) 
+[18.515991249811975, 20.908328681459686, 22.98030850166979, 24.770584816602213, 27.633090177891578, 29.729142240007217, 32.84633491511711, 34.545164455161085, 35.53925150622892]
+
+>  <Cp_T_units>  (5) 
+cal/(mol*K)
+
+>  <T_list>  (5) 
+[300.0, 400.0, 500.0, 600.0, 800.0, 1000.0, 1500.0, 2000.0, 2400.0]
+
+>  <T_units>  (5) 
+K
+
+>  <yaml_path>  (5) 
+/home/calvin/Dropbox/PersonalFolders/Calvin/HAb_Converged/rxn_1234/output/Species/rxn_1234_CtC[C]=C/rxn_1234_CtCC=C.yml
+
+>  <frequencies_cm1>  (5) 
+[60.92389375904, 224.90063621532, 350.55273360068, 378.96831885484, 541.79827476268, 666.4752602325999, 890.0643022518001, 901.2506213380799, 969.5015884335598, 1424.29515919184, 1805.7699276884798, 2002.63952982756, 3064.40593302064, 3135.01227608088, 3426.46773401764]
+
+>  <ZPE_kJmol>  (5) 
+118.68768783670004
+
+>  <E_elec_kJmol>  (5) 
+-404492.09928380174
+
+>  <E0_minus_Eelec_plus_ZPE_kJmol>  (5) 
+0.0
+
+>  <rxn>  (5) 
+rxn_1234
+
+>  <species_type>  (5) 
+r0
+
+>  <species_folder>  (5) 
+rxn_1234_CtC[C]=C
+
+>  <frequencies_cm1_list>  (5) 
+[60.92389375904, 224.90063621532, 350.55273360068, 378.96831885484, 541.79827476268, 666.4752602325999, 890.0643022518001, 901.2506213380799, 969.5015884335598, 1424.29515919184, 1805.7699276884798, 2002.63952982756, 3064.40593302064, 3135.01227608088, 3426.46773401764]
+
+>  <E0_kJmol>  (5) 
+-404373
+
+>  <H298_kJmol>  (5) 
+-404357
+
+$$$$
