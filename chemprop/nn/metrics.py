@@ -144,6 +144,20 @@ class MAE(ChempropMetric):
         return (preds - targets).abs()
 
 
+@LossFunctionRegistry.register("huber")
+@MetricRegistry.register("huber")
+class Huber(ChempropMetric):
+    def __init__(self, task_weights: ArrayLike = 1.0, beta: float = 1.0):
+        super().__init__(task_weights)
+        self.beta = beta
+
+    def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, *args) -> Tensor:
+        return F.smooth_l1_loss(preds, targets, reduction="none", beta=self.beta)
+
+    def extra_repr(self) -> str:
+        return f"task_weights={self.task_weights.tolist()}, beta={self.beta}"
+
+
 @LossFunctionRegistry.register("rmse")
 @MetricRegistry.register("rmse")
 class RMSE(MSE):
@@ -580,3 +594,293 @@ class QuantileLoss(ChempropMetric):
 
     def extra_repr(self) -> str:
         return f"alpha={self.alpha}"
+
+@LossFunctionRegistry.register("geometry_scaled")
+class GeometryScaledLoss(ChempropMetric):
+    """
+    Columns (t=7): [d1, d2, theta, psi1_sin, psi1_cos, psi2_sin, psi2_cos]
+    Targets/preds are standard-scaled before training; this loss inverts scaling to raw space,
+    then computes geometry-aware terms.
+    """
+    def __init__(self, task_weights=1,
+                 target_means=None, target_stds=None,
+                 angle_unit="deg", huber_delta=1.0,
+                 unit_penalty=1e-2, eps=1e-12,
+                 scaled_flags=None, col_idx=None):
+        super().__init__(task_weights)
+        self.eps = eps
+        self.huber_delta = huber_delta
+        self.unit_penalty = unit_penalty
+        self.angle_unit = angle_unit
+
+        # column mapping (sin,cos order per your latest message)
+        self.cols = {
+            "d1": 0, "d2": 1, "theta": 2,
+            "psi1_sin": 3, "psi1_cos": 4,
+            "psi2_sin": 5, "psi2_cos": 6,
+        }
+        if col_idx:
+            self.cols.update(col_idx)
+
+        means = torch.zeros(7) if target_means is None else torch.as_tensor(target_means, dtype=torch.float)
+        stds  = torch.ones(7)  if target_stds  is None else torch.as_tensor(target_stds,  dtype=torch.float)
+        self.register_buffer("y_mean", means.view(1, -1))
+        self.register_buffer("y_std",  stds.view(1, -1))
+
+        # IMPORTANT: set True for every column that actually WAS scaled in your dataset
+        if scaled_flags is None:
+            scaled_flags = [True] * 7
+        self.register_buffer("scaled_flags", torch.as_tensor(scaled_flags, dtype=torch.bool).view(1, -1))
+
+    def _inv_scale(self, y_scaled: Tensor) -> Tensor:
+        return torch.where(self.scaled_flags, y_scaled * self.y_std + self.y_mean, y_scaled)
+
+    def _to_radians(self, x_raw: Tensor) -> Tensor:
+        if self.angle_unit == "deg":      return x_raw * (torch.pi / 180.0)
+        if self.angle_unit == "scaled01": return x_raw * torch.pi
+        if self.angle_unit == "rad":      return x_raw
+        raise ValueError(f"Unknown angle unit: {self.angle_unit}")
+
+    def _huber(self, x: Tensor, delta: float) -> Tensor:
+        ax = x.abs()
+        return torch.where(ax <= delta, 0.5 * (ax**2) / delta, ax - 0.5 * delta)
+
+    def _pair_alignment_from_raw(self, cos_p: Tensor, sin_p: Tensor,
+                                 cos_t: Tensor, sin_t: Tensor) -> Tensor:
+        """
+        Inputs are already in RAW space (not scaled). We normalize the predicted vector,
+        compute cosine alignment, and add a small unit-circle penalty.
+        """
+        t = torch.stack([cos_p, sin_p], dim=-1)  # [B, 2] predicted (cos, sin)
+        u = torch.stack([cos_t, sin_t], dim=-1)  # [B, 2] target    (cos, sin)
+
+        u_p = t / (t.norm(dim=-1, keepdim=True).clamp_min(self.eps))
+        align = 1.0 - (u_p * u).sum(dim=-1)                       # [B]
+        unit_pen = (t.norm(dim=-1).pow(2) - 1.0).pow(2)           # [B]
+        return align + self.unit_penalty * unit_pen
+
+    def _calc_unreduced_loss(self, preds: Tensor, targets: Tensor, *_) -> Tensor:
+        # 1) invert scaling ONCE for all columns flagged as scaled
+        P_raw = self._inv_scale(preds)
+        T_raw = self._inv_scale(targets)
+
+        L = torch.zeros_like(preds)
+
+        # 2) distances (log-space Huber on raw)
+        for k in ("d1", "d2"):
+            i = self.cols[k]
+            z_p = torch.log(P_raw[:, i].clamp_min(1e-12))
+            z_t = torch.log(T_raw[:, i].clamp_min(1e-12))
+            L[:, i] = self._huber(z_p - z_t, self.huber_delta)
+
+        # 3) theta periodic (compute on raw then to radians)
+        i = self.cols["theta"]
+        th_p = self._to_radians(P_raw[:, i])
+        th_t = self._to_radians(T_raw[:, i])
+        L[:, i] = 1.0 - torch.cos(th_p - th_t)
+
+        # 4) ψ1 pair: (sin, cos) -> pass as (cos, sin) to the helper
+        i_s1, i_c1 = self.cols["psi1_sin"], self.cols["psi1_cos"]
+        pair1 = self._pair_alignment_from_raw(
+            P_raw[:, i_c1], P_raw[:, i_s1],
+            T_raw[:, i_c1], T_raw[:, i_s1],
+        )
+        L[:, i_c1] = 0.5 * pair1
+        L[:, i_s1] = 0.5 * pair1
+
+        # 5) ψ2 pair
+        i_s2, i_c2 = self.cols["psi2_sin"], self.cols["psi2_cos"]
+        pair2 = self._pair_alignment_from_raw(
+            P_raw[:, i_c2], P_raw[:, i_s2],
+            T_raw[:, i_c2], T_raw[:, i_s2],
+        )
+        L[:, i_c2] = 0.5 * pair2
+        L[:, i_s2] = 0.5 * pair2
+
+        return L
+
+@MetricRegistry.register("r2_overall")
+class R2Overall(ChempropMetric):
+    """
+    Overall R² for multi-task regression.
+    mode="micro" -> one global R² pooling all tasks (mask-aware).
+    mode="macro" -> weight-averaged mean of per-task R².
+    """
+    higher_is_better = True
+
+    def __init__(self, task_weights: ArrayLike = 1.0, mode: str = "micro", eps: float = 1e-12):
+        super().__init__(task_weights)
+        assert mode in ("micro", "macro")
+        self.mode = mode
+        self.eps = eps
+
+        # Lazily sized on first update
+        self.add_state("sum_y",  default=torch.tensor([]), dist_reduce_fx="sum")   # [T]
+        self.add_state("sum_y2", default=torch.tensor([]), dist_reduce_fx="sum")   # [T]
+        self.add_state("rss",    default=torch.tensor([]), dist_reduce_fx="sum")   # [T]
+        self.add_state("count",  default=torch.tensor([]), dist_reduce_fx="sum")   # [T]
+
+    # satisfy abstract method; not used for R²
+    def _calc_unreduced_loss(self, preds, targets, mask, weights, lt_mask, gt_mask) -> Tensor:
+        return torch.zeros_like(targets)
+
+    def update(self, preds: Tensor, targets: Tensor, mask: Tensor, *args, **kwargs):
+        # preds/targets/mask: [B, T]
+        B, T = targets.shape
+        device = targets.device
+        if self.sum_y.numel() == 0:
+            self.sum_y  = torch.zeros(T, device=device)
+            self.sum_y2 = torch.zeros(T, device=device)
+            self.rss    = torch.zeros(T, device=device)
+            self.count  = torch.zeros(T, device=device)
+
+        m = mask.to(torch.bool)
+        p = torch.where(m, preds, torch.nan)
+        y = torch.where(m, targets, torch.nan)
+
+        self.rss    += torch.nan_to_num((p - y) ** 2).nansum(dim=0)
+        self.sum_y  += torch.nan_to_num(y).nansum(dim=0)
+        self.sum_y2 += torch.nan_to_num(y ** 2).nansum(dim=0)
+        self.count  += m.float().sum(dim=0)
+
+    def compute(self):
+        # per-task stats → per-task R²
+        denom = self.count.clamp_min(1.0)
+        mu    = self.sum_y / denom
+        tss_t = self.sum_y2 - 2 * mu * self.sum_y + denom * (mu ** 2)  # per-task TSS
+        r2_t  = 1.0 - (self.rss / tss_t.clamp_min(self.eps))
+        r2_t  = torch.where(self.count > 1, r2_t, torch.zeros_like(r2_t))
+
+        if self.mode == "macro":
+            w = self.task_weights.view(-1)
+            return (r2_t * w).sum() / (w.sum() + 1e-12)
+
+        # micro/global: pool numerators & denominators across tasks
+        rss_all = self.rss.sum()
+        tss_all = tss_t.sum().clamp_min(self.eps)
+        return 1.0 - (rss_all / tss_all)
+
+@MetricRegistry.register("r2_overall")
+class R2Overall(ChempropMetric):
+    higher_is_better = True
+
+    def __init__(self, task_weights: ArrayLike = 1.0, mode: str = "micro",
+                 angle_unit: str = "deg", eps: float = 1e-12, col_idx: dict | None = None):
+        super().__init__(task_weights)
+        assert mode in ("micro", "macro")
+        self.mode, self.eps, self.angle_unit = mode, eps, angle_unit
+
+        self.cols = {"d1":0,"d2":1,"theta":2,"psi1_sin":3,"psi1_cos":4,"psi2_sin":5,"psi2_cos":6}
+        if col_idx: self.cols.update(col_idx)
+
+        # lazy-sized states
+        self.add_state("rss_d",    default=torch.tensor([]), dist_reduce_fx="sum")   # [2]
+        self.add_state("sum_y_d",  default=torch.tensor([]), dist_reduce_fx="sum")   # [2]
+        self.add_state("sum_y2_d", default=torch.tensor([]), dist_reduce_fx="sum")   # [2]
+        self.add_state("cnt_d",    default=torch.tensor([]), dist_reduce_fx="sum")   # [2]
+
+        self.add_state("rss_theta",     default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("sum_cos_theta", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("sum_sin_theta", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("cnt_theta",     default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+        self.add_state("rss_psi",     default=torch.tensor([]), dist_reduce_fx="sum")  # [2]
+        self.add_state("sum_cos_psi", default=torch.tensor([]), dist_reduce_fx="sum")  # [2]
+        self.add_state("sum_sin_psi", default=torch.tensor([]), dist_reduce_fx="sum")  # [2]
+        self.add_state("cnt_psi",     default=torch.tensor([]), dist_reduce_fx="sum")  # [2]
+
+    def _calc_unreduced_loss(self, *args, **kwargs) -> Tensor:
+        return torch.zeros(1)
+
+    def _to_rad(self, x: torch.Tensor) -> torch.Tensor:
+        if self.angle_unit == "deg":      return x * (torch.pi / 180.0)
+        if self.angle_unit == "scaled01": return x * torch.pi
+        if self.angle_unit == "rad":      return x
+        raise ValueError(f"Unknown angle_unit={self.angle_unit}")
+
+    @torch.no_grad()
+    def update(self, preds: Tensor, targets: Tensor, mask: Tensor, *args, **kwargs):
+        device = targets.device
+        if self.rss_d.numel() == 0:
+            z = lambda n: torch.zeros(n, device=device, dtype=targets.dtype)
+            self.rss_d    = z(2); self.sum_y_d  = z(2); self.sum_y2_d = z(2); self.cnt_d = z(2)
+            self.rss_psi  = z(2); self.sum_cos_psi = z(2); self.sum_sin_psi = z(2); self.cnt_psi = z(2)
+            # scalars already created; ensure dtypes
+            self.rss_theta     = self.rss_theta.to(device=device, dtype=targets.dtype)
+            self.sum_cos_theta = self.sum_cos_theta.to(device=device, dtype=targets.dtype)
+            self.sum_sin_theta = self.sum_sin_theta.to(device=device, dtype=targets.dtype)
+            self.cnt_theta     = self.cnt_theta.to(device=device, dtype=targets.dtype)
+
+        m_d1 = mask[:, self.cols["d1"]].bool()
+        m_d2 = mask[:, self.cols["d2"]].bool()
+        m_th = mask[:, self.cols["theta"]].bool()
+        m_p1 = mask[:, self.cols["psi1_sin"]].bool() & mask[:, self.cols["psi1_cos"]].bool()
+        m_p2 = mask[:, self.cols["psi2_sin"]].bool() & mask[:, self.cols["psi2_cos"]].bool()
+
+        # distances
+        for gi, key in enumerate(("d1", "d2")):
+            idx = self.cols[key]
+            m = m_d1 if gi == 0 else m_d2
+            if m.any():
+                p = preds[m, idx]; y = targets[m, idx]
+                self.rss_d[gi]    += (p - y).pow(2).sum()
+                self.sum_y_d[gi]  += y.sum()
+                self.sum_y2_d[gi] += y.pow(2).sum()
+                self.cnt_d[gi]    += m.sum().to(self.rss_d.dtype)
+
+        # theta (circular)
+        if m_th.any():
+            th_p = self._to_rad(preds[m_th, self.cols["theta"]])
+            th_t = self._to_rad(targets[m_th, self.cols["theta"]])
+            self.rss_theta     += (1.0 - torch.cos(th_p - th_t)).sum()
+            self.sum_cos_theta += torch.cos(th_t).sum()
+            self.sum_sin_theta += torch.sin(th_t).sum()
+            self.cnt_theta     += m_th.sum().to(self.rss_d.dtype)
+
+        # dihedrals
+        def _accum_psi(group_idx: int, s_col: int, c_col: int, m: torch.Tensor):
+            if not m.any(): return
+            cos_t = targets[m, c_col]; sin_t = targets[m, s_col]
+            u_t = torch.stack([cos_t, sin_t], dim=-1)
+            cos_p = preds[m, c_col];  sin_p = preds[m, s_col]
+            t = torch.stack([cos_p, sin_p], dim=-1)
+            u_p = t / t.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+            self.rss_psi[group_idx]     += (1.0 - (u_p * u_t).sum(dim=-1)).sum()
+            self.sum_cos_psi[group_idx] += cos_t.sum()
+            self.sum_sin_psi[group_idx] += sin_t.sum()
+            self.cnt_psi[group_idx]     += m.sum().to(self.rss_d.dtype)
+
+        _accum_psi(0, self.cols["psi1_sin"], self.cols["psi1_cos"], m_p1)
+        _accum_psi(1, self.cols["psi2_sin"], self.cols["psi2_cos"], m_p2)
+
+    @torch.no_grad()
+    def compute(self):
+        denom_d = self.cnt_d.clamp_min(1.0)
+        mu_d    = self.sum_y_d / denom_d
+        tss_d   = self.sum_y2_d - 2 * mu_d * self.sum_y_d + denom_d * (mu_d ** 2)
+
+        R_theta = torch.hypot(self.sum_cos_theta, self.sum_sin_theta)
+        tss_theta = (self.cnt_theta - R_theta).clamp_min(self.eps)
+
+        R_psi = torch.hypot(self.sum_cos_psi, self.sum_sin_psi)
+        tss_psi = (self.cnt_psi - R_psi).clamp_min(self.eps)
+
+        r2_d = torch.where(self.cnt_d > 1, 1.0 - (self.rss_d / tss_d.clamp_min(self.eps)), torch.zeros_like(self.rss_d))
+        r2_theta = 1.0 - (self.rss_theta / tss_theta) if (self.cnt_theta > 1) else torch.tensor(0.0, device=self.rss_d.device, dtype=self.rss_d.dtype)
+        r2_psi = torch.where(self.cnt_psi > 1, 1.0 - (self.rss_psi / tss_psi), torch.zeros_like(self.rss_psi))
+
+        r2_groups = torch.stack([r2_d[0], r2_d[1], r2_theta, r2_psi[0], r2_psi[1]])
+
+        if self.mode == "macro":
+            tw = self.task_weights.view(-1)
+            w_d1   = tw[self.cols["d1"]]
+            w_d2   = tw[self.cols["d2"]]
+            w_th   = tw[self.cols["theta"]]
+            w_psi1 = 0.5 * (tw[self.cols["psi1_sin"]] + tw[self.cols["psi1_cos"]])
+            w_psi2 = 0.5 * (tw[self.cols["psi2_sin"]] + tw[self.cols["psi2_cos"]])
+            w_groups = torch.stack([w_d1, w_d2, w_th, w_psi1, w_psi2])
+            return (r2_groups * w_groups).sum() / w_groups.sum().clamp_min(self.eps)
+
+        rss_all = self.rss_d.sum() + self.rss_theta + self.rss_psi.sum()
+        tss_all = tss_d.sum() + tss_theta + tss_psi.sum()
+        return 1.0 - (rss_all / tss_all.clamp_min(self.eps))

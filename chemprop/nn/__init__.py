@@ -15,6 +15,7 @@ from .message_passing import (
     MABMessagePassing,
     MessagePassing,
     MulticomponentMessagePassing,
+    CommunicativeMessagePassing,
 )
 from .metrics import (
     MAE,
@@ -59,6 +60,9 @@ from .predictors import (
     QuantileFFN,
     RegressionFFN,
     SpectralFFN,
+    TransitionStateModeHead,
+    EGNNLayer,
+    EquivariantTSModeHead,
 )
 from .transforms import GraphTransform, ScaleTransform, UnscaleTransform
 from .utils import Activation
@@ -116,6 +120,7 @@ __all__ = [
     "MABBondMessagePassing",
     "MABMessagePassing",
     "MulticomponentMessagePassing",
+    "CommunicativeMessagePassing",
     "Predictor",
     "PredictorRegistry",
     "QuantileFFN",
@@ -128,6 +133,7 @@ __all__ = [
     "BinaryDirichletFFN",
     "MulticlassClassificationFFN",
     "SpectralFFN",
+    "TransitionStateModeHead",
     "Activation",
     "GraphTransform",
     "ScaleTransform",

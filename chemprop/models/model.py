@@ -75,6 +75,7 @@ class MPNN(pl.LightningModule):
         max_lr: float = 1e-3,
         final_lr: float = 1e-4,
         X_d_transform: ScaleTransform | None = None,
+        weight_decay: float = 0.0,
     ):
         super().__init__()
         # manually add X_d_transform to hparams to suppress lightning's warning about double saving
@@ -106,6 +107,7 @@ class MPNN(pl.LightningModule):
         self.init_lr = init_lr
         self.max_lr = max_lr
         self.final_lr = final_lr
+        self.weight_decay = weight_decay
 
     @property
     def output_dim(self) -> int:
@@ -206,7 +208,7 @@ class MPNN(pl.LightningModule):
         return self(bmg, V_d, X_d)
 
     def configure_optimizers(self):
-        opt = optim.Adam(self.parameters(), self.init_lr)
+        opt = optim.Adam(self.parameters(), self.init_lr, weight_decay=self.weight_decay)
         if self.trainer.train_dataloader is None:
             # Loading `train_dataloader` to estimate number of training batches.
             # Using this line of code can pypass the issue of using `num_training_batches` as described [here](https://github.com/Lightning-AI/pytorch-lightning/issues/16060).

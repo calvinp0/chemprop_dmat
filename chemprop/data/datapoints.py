@@ -6,7 +6,7 @@ import numpy as np
 from rdkit.Chem import AllChem as Chem
 
 from chemprop.featurizers import Featurizer
-from chemprop.utils import make_mol
+from chemprop.utils import make_mol, make_mol_sdf
 
 MoleculeFeaturizer = Featurizer[Chem.Mol, np.ndarray]
 
@@ -60,6 +60,26 @@ class _MoleculeDatapointMixin:
         mol = make_mol(smi, keep_h, add_h, ignore_stereo, reorder_atoms)
 
         kwargs["name"] = smi if "name" not in kwargs else kwargs["name"]
+
+        return cls(mol, *args, **kwargs)
+    
+    @classmethod
+    def from_sdf(cls,
+        sdf: str | Path,
+        *args,
+        keep_h: bool = False,
+        add_h: bool = False,
+        ignore_stereo: bool = False,
+        reorder_atoms: bool = False,
+        mol_type: str | None = None,
+        **kwargs,
+    ) -> _MoleculeDatapointMixin:
+        mols = make_mol_sdf(sdf, keep_h, add_h, ignore_stereo, reorder_atoms, mol_type)
+        mol = mols[0] if isinstance(mols, list) else mols
+    
+        reaction = mol.GetProp("reaction") if mol.HasProp("reaction") else None
+
+        kwargs["name"] = (str(reaction) + "_" + str(mol_type) if "name" not in kwargs else kwargs["name"])
 
         return cls(mol, *args, **kwargs)
 

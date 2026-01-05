@@ -36,6 +36,9 @@ __all__ = [
     "MulticlassClassificationFFN",
     "MulticlassDirichletFFN",
     "SpectralFFN",
+    "TransitionStateModeHead",
+    "EGNNLayer",
+    "EquivariantTSModeHead",
 ]
 
 
@@ -368,3 +371,148 @@ class SpectralFFN(_FFNPredictorBase):
         return Y / Y.sum(1, keepdim=True)
 
     train_step = forward
+
+
+class TransitionStateModeHead(nn.Module, HasHParams, HyperparametersMixin):
+    """Per-atom predictor head that maps atom embeddings to 3D mode vectors."""
+
+    def __init__(
+        self,
+        input_dim: int = DEFAULT_HIDDEN_DIM,
+        hidden_dim: int = 64,
+        n_layers: int = 2,
+    ) -> None:
+        super().__init__()
+        if n_layers < 1:
+            raise ValueError("n_layers must be >= 1 for TransitionStateModeHead.")
+        self.save_hyperparameters()
+        self.hparams["cls"] = self.__class__
+
+        layers: list[nn.Module] = [nn.Linear(input_dim, hidden_dim), nn.ReLU()]
+        for _ in range(n_layers - 1):
+            layers.extend([nn.Linear(hidden_dim, hidden_dim), nn.ReLU()])
+        layers.append(nn.Linear(hidden_dim, 3))
+
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, atom_repr: Tensor) -> Tensor:
+        """Predicts per-atom transition-state modes preserving leading dimensions."""
+
+        return self.net(atom_repr)
+
+
+class EGNNLayer(nn.Module):
+    """Lightweight EGNN-style layer updating coords and scalar node features."""
+
+    def __init__(self, d_h: int, d_edge: int = 0, d_msg: int = 64):
+        super().__init__()
+        self.phi_e = nn.Sequential(
+            nn.Linear(2 * d_h + 1 + d_edge, d_msg),
+            nn.SiLU(),
+            nn.Linear(d_msg, d_msg),
+            nn.SiLU(),
+        )
+        self.phi_x = nn.Linear(d_msg, 1, bias=False)
+        self.phi_h = nn.Sequential(
+            nn.Linear(d_h + d_msg, d_h),
+            nn.SiLU(),
+            nn.Linear(d_h, d_h),
+        )
+
+    def forward(
+        self,
+        x: Tensor,  # [B, N, 3]
+        h: Tensor,  # [B, N, d_h]
+        edge_index: Tensor,  # [B, E, 2] or [2, E]
+        edge_attr: Tensor | None = None,  # [B, E, d_edge] or None
+        mask: Tensor | None = None,  # [B, N]
+        edge_mask: Tensor | None = None,  # [B, E] optional
+    ) -> tuple[Tensor, Tensor]:
+        if edge_index.dim() == 2:
+            edge_index = edge_index.unsqueeze(0).expand(x.size(0), -1, -1)
+        B, E, _ = edge_index.shape
+        if E == 0:
+            return x, h
+
+        src = edge_index[:, :, 0]  # [B, E]
+        dst = edge_index[:, :, 1]  # [B, E]
+
+        x_i = torch.gather(x, 1, src.unsqueeze(-1).expand(-1, -1, 3))
+        x_j = torch.gather(x, 1, dst.unsqueeze(-1).expand(-1, -1, 3))
+        h_i = torch.gather(h, 1, src.unsqueeze(-1).expand(-1, -1, h.size(-1)))
+        h_j = torch.gather(h, 1, dst.unsqueeze(-1).expand(-1, -1, h.size(-1)))
+
+        diff = x_i - x_j
+        dist2 = (diff**2).sum(dim=-1, keepdim=True).clamp_min(1e-12)  # [B, E, 1]
+
+        if edge_attr is not None:
+            edge_input = torch.cat([h_i, h_j, dist2, edge_attr], dim=-1)
+        else:
+            edge_input = torch.cat([h_i, h_j, dist2], dim=-1)
+        edge_input = torch.nan_to_num(edge_input, nan=0.0, posinf=1e4, neginf=-1e4)
+
+        m_ij = self.phi_e(edge_input)  # [B, E, d_msg]
+        if edge_mask is not None:
+            m_ij = m_ij * edge_mask.float().unsqueeze(-1)
+        m_ij = torch.nan_to_num(m_ij, nan=0.0, posinf=1e4, neginf=-1e4)
+        m_x = self.phi_x(m_ij)  # [B, E, 1]
+
+        inv_d = (dist2.sqrt() + 1e-8).reciprocal()
+        direction = diff * inv_d
+        delta_x_ij = m_x * direction  # [B, E, 3]
+        delta_x_ij = torch.nan_to_num(delta_x_ij, nan=0.0, posinf=1e4, neginf=-1e4)
+
+        delta_x = x.new_zeros(x.shape)
+        delta_h_msg = h.new_zeros((x.size(0), x.size(1), m_ij.size(-1)))
+
+        for b in range(B):
+            delta_x[b].index_add_(0, src[b], delta_x_ij[b])
+            delta_h_msg[b].index_add_(0, src[b], m_ij[b])
+
+        h_input = torch.cat([h, delta_h_msg], dim=-1)
+        h_new = h + self.phi_h(h_input)
+        x_new = x + delta_x
+        h_new = torch.nan_to_num(h_new, nan=0.0, posinf=1e4, neginf=-1e4)
+        x_new = torch.nan_to_num(x_new, nan=0.0, posinf=1e4, neginf=-1e4)
+
+        if mask is not None:
+            mask_f = mask.float().unsqueeze(-1)
+            x_new = x * (1 - mask_f) + x_new * mask_f
+            h_new = h * (1 - mask_f) + h_new * mask_f
+
+        return x_new, h_new
+
+
+class EquivariantTSModeHead(nn.Module, HasHParams, HyperparametersMixin):
+    """EGNN-based head that predicts per-atom TS displacements."""
+
+    def __init__(self, d_h: int, n_layers: int = 3, d_edge: int = 0, d_msg: int = 64):
+        super().__init__()
+        if n_layers < 1:
+            raise ValueError("n_layers must be >= 1 for EquivariantTSModeHead.")
+        self.save_hyperparameters()
+        self.hparams["cls"] = self.__class__
+
+        self.layers = nn.ModuleList([EGNNLayer(d_h=d_h, d_edge=d_edge, d_msg=d_msg) for _ in range(n_layers)])
+        self.out = nn.Linear(d_h, 3)
+
+    def forward(
+        self,
+        coords: Tensor,  # [B, N, 3]
+        h: Tensor,  # [B, N, d_h]
+        edge_index: Tensor,  # [B, E, 2] or [2, E]
+        mask: Tensor,  # [B, N]
+        edge_attr: Tensor | None = None,
+        edge_mask: Tensor | None = None,
+    ) -> Tensor:
+        x, h_cur = coords, h
+        for layer in self.layers:
+            x, h_cur = layer(
+                x,
+                h_cur,
+                edge_index=edge_index,
+                edge_attr=edge_attr,
+                mask=mask,
+                edge_mask=edge_mask,
+            )
+        return self.out(h_cur)

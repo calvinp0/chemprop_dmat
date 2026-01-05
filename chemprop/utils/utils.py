@@ -3,6 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 import os
 from typing import Any, Callable, Iterable, Iterator, Type
+from pathlib import Path
 
 import multiprocess
 import numpy as np
@@ -88,6 +89,38 @@ def make_mol(
         mol = Chem.rdmolops.RenumberAtoms(mol, new_order)
 
     return mol
+
+
+def make_mol_sdf(
+    sdf: str | Path, remove_h: bool = True, add_h: bool = False, ignore_stereo: bool = False, reorder_atoms: bool = False, mol_type: str | None = None
+) -> list[Chem.Mol]:
+    sdf = str(Path(sdf))
+    suppl = Chem.SDMolSupplier(sdf, removeHs=remove_h, sanitize=True)
+    mols = [mol for mol in suppl if mol is not None]
+
+    if add_h:
+        for mol in mols:
+            if mol.GetNumAtoms() != mol.GetNumHeavyAtoms():
+                raise ValueError("Hydrogens are already present in the molecule")
+            Chem.AddHs(mol)
+    if ignore_stereo:
+        for mol in mols:
+            for atom in mol.GetAtoms():
+                atom.SetChiralTag(Chem.ChiralType.CHI_UNSPECIFIED)
+            for bond in mol.GetBonds():
+                bond.SetStereo(Chem.BondStereo.STEREONONE)
+    if reorder_atoms:
+        for mol in mols:
+            atom_map_numbers = tuple(atom.GetAtomMapNum() for atom in mol.GetAtoms())
+            new_order = np.argsort(atom_map_numbers).tolist()
+            mol = Chem.rdmolops.RenumberAtoms(mol, new_order)
+    if mol_type == "all":
+        return mols
+    else:
+        for mol in mols:
+            if mol.GetProp("type") == mol_type:
+                return mol
+    raise ValueError(f"No molecule found with type '{mol_type}'.")
 
 
 def create_and_call_object(

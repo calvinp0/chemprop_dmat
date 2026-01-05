@@ -551,6 +551,20 @@ def add_train_args(parser: ArgumentParser) -> ArgumentParser:
         default=0,
         help="Specify the random seed to use when splitting data into train/val/test sets. When ``--num-replicates`` > 1, the first replicate uses this seed and all subsequent replicates add 1 to the seed (also used for shuffling data in ``build_dataloader`` when ``shuffle`` is True).",
     )
+    split_args.add_argument(
+        "--shuffle-train-targets",
+        action="store_true",
+        help=(
+            "Randomly permute training targets after split indices are formed. "
+            "Only training targets are shuffled; validation/test targets remain unchanged."
+        ),
+    )
+    split_args.add_argument(
+        "--shuffle-seed",
+        type=int,
+        default=0,
+        help="Random seed used when shuffling training targets (only used with --shuffle-train-targets).",
+    )
 
     parser.add_argument(
         "--pytorch-seed",
@@ -1012,11 +1026,39 @@ def build_splits(args, format_kwargs, featurization_kwargs):
     train_data, val_data, test_data = split_data_by_indices(
         all_data, train_indices, val_indices, test_indices
     )
+    if args.shuffle_train_targets:
+        shuffle_train_targets(train_data, args.shuffle_seed)
     for i_split in range(len(train_data)):
         sizes = [len(train_data[i_split][0]), len(val_data[i_split][0]), len(test_data[i_split][0])]
         logger.info(f"train/val/test split_{i_split} sizes: {sizes}")
 
     return train_data, val_data, test_data
+
+
+def shuffle_train_targets(train_data, seed: int) -> None:
+    rng = np.random.default_rng(seed)
+    for split_idx, split_data in enumerate(train_data):
+        if not split_data:
+            continue
+        first_component = split_data[0]
+        if not first_component:
+            continue
+        y_values = [datapoint.y for datapoint in first_component]
+        if all(y is None for y in y_values):
+            logger.warning(
+                "Requested training target shuffling, but molecular targets are missing for "
+                "split %s; atom/bond targets are not shuffled.",
+                split_idx,
+            )
+            continue
+        perm = rng.permutation(len(first_component))
+        for component in split_data:
+            for target_idx, source_idx in enumerate(perm):
+                source_y = y_values[source_idx]
+                component[target_idx].y = None if source_y is None else np.array(source_y, copy=True)
+        logger.info(
+            "Shuffled training targets for split %s with seed %s.", split_idx, seed
+        )
 
 
 def summarize(
