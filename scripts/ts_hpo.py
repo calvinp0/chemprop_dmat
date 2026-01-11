@@ -977,7 +977,7 @@ def run_search(args):
 
 def parse_args():
     p = argparse.ArgumentParser(description="Optuna HPO for TS distance-matrix model.")
-    p.add_argument("--ts-path", type=str, default="examples/ts_molecules.ndjson", help="Path to ts_molecules NDJSON.")
+    p.add_argument("--ts-path", type=str, default="DATA/ts_molecules.ndjson", help="Path to ts_molecules NDJSON.")
     p.add_argument("--n-trials", type=int, default=20)
     p.add_argument("--timeout", type=int, default=None, help="Global Optuna timeout (seconds).")
     p.add_argument("--max-epochs", type=int, default=30)

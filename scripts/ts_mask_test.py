@@ -66,7 +66,7 @@ def grads_finite(model: torch.nn.Module) -> bool:
 
 def main():
     p = argparse.ArgumentParser(description="Check mask-aware loss/metrics for TS targets.")
-    p.add_argument("--ts-path", type=str, default="examples/ts_molecules.ndjson")
+    p.add_argument("--ts-path", type=str, default="DATA/ts_molecules.ndjson")
     p.add_argument("--sdf-dir", type=str, default="DATA/SDF")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--seed", type=int, default=7)

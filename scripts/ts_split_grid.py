@@ -68,7 +68,7 @@ def run_one(
 
 def main():
     p = argparse.ArgumentParser(description="Run TS HPO across a split grid.")
-    p.add_argument("--ts-path", type=str, default="examples/ts_molecules.ndjson")
+    p.add_argument("--ts-path", type=str, default="DATA/ts_molecules.ndjson")
     p.add_argument("--sdf-dir", type=str, default="DATA/SDF")
     p.add_argument("--n-trials", type=int, default=20)
     p.add_argument("--max-epochs", type=int, default=50)

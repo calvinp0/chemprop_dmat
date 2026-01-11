@@ -323,7 +323,7 @@ def run_basic(args):
 
 def parse_args():
     p = argparse.ArgumentParser(description="Train a baseline TS model and save test predictions.")
-    p.add_argument("--ts-path", type=str, default="examples/ts_molecules.ndjson", help="Path to ts_molecules NDJSON.")
+    p.add_argument("--ts-path", type=str, default="DATA/ts_molecules.ndjson", help="Path to ts_molecules NDJSON.")
     p.add_argument("--sdf-dir", type=str, default="DATA/SDF", help="Directory containing TS SDF files.")
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--batch-size", type=int, default=32)
