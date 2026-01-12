@@ -182,3 +182,4 @@ DATA/TSModes/
 ts_guesses/*
 ts_guesses_opt/*
 *.sqlite3
+ts_guesses_g09_jobs/*
