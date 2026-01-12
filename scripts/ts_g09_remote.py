@@ -112,12 +112,117 @@ def _write_results(path: Path, fieldnames: List[str], rows: List[Dict[str, str]]
         writer.writerows(rows)
 
 
+def _read_baseline(csv_path: Path) -> Dict[str, Dict[str, str]]:
+    if not csv_path.exists():
+        return {}
+    with csv_path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        baseline = {}
+        fine_opt = {}
+        for row in reader:
+            name = row.get("reaction_name")
+            job_type = row.get("job_type")
+            if not name:
+                continue
+            if job_type == "opt":
+                baseline[name] = row
+            elif job_type == "fine_opt" and name not in fine_opt:
+                fine_opt[name] = row
+        for name, row in fine_opt.items():
+            if name not in baseline:
+                row = dict(row)
+                row["baseline_note"] = "fallback_fine_opt"
+                baseline[name] = row
+        return baseline
+
+
+def _backfill_rows(
+    results_csv: Path,
+    job_root: Path,
+    baseline_csv: Path,
+) -> None:
+    fieldnames, rows = _read_results(results_csv) if results_csv.exists() else ([], [])
+    existing = {row.get("reaction_name", ""): row for row in rows if row.get("reaction_name")}
+    baseline = _read_baseline(baseline_csv)
+
+    required_fields = [
+        "reaction_name",
+        "guess_xyz_path",
+        "gjf_path",
+        "job_dir",
+        "submit_sh_path",
+        "log_path",
+        "status",
+        "runtime_seconds",
+        "baseline_runtime_seconds",
+        "baseline_job_count",
+        "baseline_job_types",
+        "charge",
+        "multiplicity",
+        "baseline_pbs_ncpus_max",
+        "baseline_pbs_mem_bytes_max",
+        "baseline_gjf_nprocshared_max",
+        "baseline_gjf_mem_bytes_max",
+        "baseline_note",
+        "real_time_seconds",
+        "job_id",
+        "submit_epoch",
+    ]
+    if not fieldnames:
+        fieldnames = required_fields
+    else:
+        for field in required_fields:
+            if field not in fieldnames:
+                fieldnames.append(field)
+
+    for job_dir in _job_dirs(job_root):
+        name = job_dir.name
+        if name in existing:
+            continue
+        base = baseline.get(name, {})
+        existing[name] = {
+            "reaction_name": name,
+            "guess_xyz_path": str(Path("ts_guesses_opt") / f"{name}_ts_opt.xyz"),
+            "gjf_path": str(job_dir / "input.gjf"),
+            "job_dir": str(job_dir),
+            "submit_sh_path": str(job_dir / "submit.sh"),
+            "log_path": "",
+            "status": "not_run",
+            "runtime_seconds": "",
+            "baseline_runtime_seconds": base.get("runtime_seconds", ""),
+            "baseline_job_count": "1" if base else "",
+            "baseline_job_types": base.get("job_type", ""),
+            "charge": base.get("charge", ""),
+            "multiplicity": base.get("multiplicity", ""),
+            "baseline_pbs_ncpus_max": base.get("pbs_ncpus", ""),
+            "baseline_pbs_mem_bytes_max": base.get("pbs_mem_bytes", ""),
+            "baseline_gjf_nprocshared_max": base.get("gjf_nprocshared", ""),
+            "baseline_gjf_mem_bytes_max": base.get("gjf_mem_bytes", ""),
+            "baseline_note": base.get("baseline_note", ""),
+            "real_time_seconds": "",
+            "job_id": "",
+            "submit_epoch": "",
+        }
+
+    _write_results(results_csv, fieldnames, [existing[k] for k in sorted(existing)])
+
+
 def _load_submit_log(path: Path) -> Dict[str, Dict[str, str]]:
     if not path.exists():
         return {}
     with path.open(newline="") as handle:
         reader = csv.DictReader(handle)
-        return {row.get("reaction_name", ""): row for row in reader if row.get("reaction_name")}
+        cleaned = {}
+        for row in reader:
+            name = row.get("reaction_name", "")
+            if not name:
+                continue
+            job_id = row.get("job_id", "")
+            row["job_id"] = _parse_job_id(job_id) if job_id else ""
+            submit_epoch = row.get("submit_epoch", "")
+            row["submit_epoch"] = submit_epoch if submit_epoch.isdigit() else ""
+            cleaned[name] = row
+        return cleaned
 
 
 def update_real_time(
@@ -150,6 +255,11 @@ def update_real_time(
             continue
         initial = path / "initial_time"
         final = path / "final_time"
+        log_path = path / "input.log"
+        normal_termination = False
+        if log_path.exists():
+            log_text = log_path.read_text(errors="ignore")
+            normal_termination = "Normal termination of Gaussian" in log_text
         if use_remote_times:
             if not (remote and remote_base):
                 continue
@@ -161,11 +271,30 @@ def update_real_time(
                     print(f"[time] {reaction_name} (remote)")
                 init_ts = _ssh(remote, f"stat -c %Y {remote_path}/initial_time")
                 fin_ts = _ssh(remote, f"stat -c %Y {remote_path}/final_time")
+                if log_path.exists():
+                    if not normal_termination:
+                        if verbose:
+                            print(f"[time] {reaction_name} no normal termination in input.log")
+                        continue
                 elapsed = float(fin_ts.strip()) - float(init_ts.strip())
                 row["real_time_seconds"] = f"{elapsed:.3f}"
+                if verbose:
+                    print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
             except subprocess.CalledProcessError:
                 if verbose:
                     print(f"[time] {reaction_name} missing initial_time/final_time on remote")
+                if initial.exists() and final.exists():
+                    if verbose:
+                        print(f"[time] {reaction_name} falling back to local times")
+                    if log_path.exists():
+                        if not normal_termination:
+                            if verbose:
+                                print(f"[time] {reaction_name} no normal termination in input.log")
+                            continue
+                    elapsed = final.stat().st_mtime - initial.stat().st_mtime
+                    row["real_time_seconds"] = f"{elapsed:.3f}"
+                    if verbose:
+                        print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
         else:
             if not (initial.exists() and final.exists()):
                 if verbose:
@@ -173,12 +302,28 @@ def update_real_time(
                 continue
             if verbose:
                 print(f"[time] {reaction_name} (local)")
+            if log_path.exists():
+                if not normal_termination:
+                    if verbose:
+                        print(f"[time] {reaction_name} no normal termination in input.log")
+                    continue
             elapsed = final.stat().st_mtime - initial.stat().st_mtime
             row["real_time_seconds"] = f"{elapsed:.3f}"
+            if verbose:
+                print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
+
+        if normal_termination:
+            row["status"] = "ok"
+        elif final.exists():
+            row["status"] = "failed"
         submit_row = submit_index.get(reaction_name)
         if submit_row:
-            row["job_id"] = submit_row.get("job_id", row.get("job_id", ""))
-            row["submit_epoch"] = submit_row.get("submit_epoch", row.get("submit_epoch", ""))
+            job_id = submit_row.get("job_id", "")
+            submit_epoch = submit_row.get("submit_epoch", "")
+            if job_id:
+                row["job_id"] = job_id
+            if submit_epoch:
+                row["submit_epoch"] = submit_epoch
 
     _write_results(results_csv, fieldnames, rows)
 
@@ -216,6 +361,17 @@ def main() -> None:
         default="ts_guesses_g09_submit_log.csv",
         help="CSV log of qsub submissions.",
     )
+    parser.add_argument(
+        "--backfill-results",
+        action="store_true",
+        help="Add missing rows for any job dirs not in results CSV.",
+    )
+    parser.add_argument(
+        "--baseline-csv",
+        type=str,
+        default="ts0_opt_resources.csv",
+        help="Baseline CSV for backfill fields.",
+    )
     parser.add_argument("--quiet", action="store_true", help="Suppress per-job progress.")
 
     args = parser.parse_args()
@@ -226,6 +382,8 @@ def main() -> None:
         raise SystemExit(f"No job dirs found in {job_root}")
 
     verbose = not args.quiet
+    if args.backfill_results:
+        _backfill_rows(Path(args.results_csv), job_root, Path(args.baseline_csv))
     if args.sync_to:
         sync_to_remote(job_dirs, args.remote, args.remote_base, verbose)
     if args.submit:

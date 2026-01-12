@@ -204,6 +204,39 @@ class GaussianParser:
             self._zpe_correction = self._parse_zpe_correction()
         return self._zpe_correction
 
+    @property
+    def opt_cycles(self) -> Optional[int]:
+        if getattr(self, "_opt_cycles", None) is None:
+            self._opt_cycles = self._parse_opt_cycles()
+        return self._opt_cycles
+
+    def _parse_opt_cycles(self) -> Optional[int]:
+        # --- Primary: read "Step number" lines and take the maximum ---
+        step_nums = []
+        step_re = re.compile(r"\bStep number\s+(\d+)\b", re.IGNORECASE)
+
+        for line in self.lines:
+            m = step_re.search(line)
+            if m:
+                step_nums.append(int(m.group(1)))
+
+        if step_nums:
+            return max(step_nums)
+
+        # --- Fallback: count convergence-table occurrences ---
+        # Typically each opt cycle prints a block containing these lines.
+        # Using "Maximum Force" is a good anchor.
+        n_blocks = 0
+        for line in self.lines:
+            if line.strip().startswith("Maximum Force"):
+                n_blocks += 1
+
+        if n_blocks:
+            return n_blocks
+
+        # If the job isn't an optimization (or log is truncated), return None
+        return None
+
     def _parse_resources(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {
             "nprocshared": None,   # int
