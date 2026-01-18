@@ -6,6 +6,7 @@ import csv
 import shlex
 import subprocess
 import time
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
@@ -131,10 +132,13 @@ def select_reactions(
     select_all: bool,
     top_n: Optional[int],
     ids: Optional[List[str]],
+    exclude_existing: Optional[set[str]],
 ) -> List[Tuple[str, Path]]:
     mapping = {reaction_name_from_xyz(p): p for p in xyz_paths}
     if ids:
         return [(name, mapping[name]) for name in ids if name in mapping]
+    if exclude_existing:
+        mapping = {name: path for name, path in mapping.items() if name not in exclude_existing}
     if select_all or top_n is None:
         return sorted(mapping.items())
     ranked = []
@@ -254,6 +258,13 @@ def _mem_bytes_to_mb(mem_bytes: Optional[int]) -> Optional[int]:
     return max(1, int(mem_bytes / (1024 * 1024)))
 
 
+def _record_path(path: Path, seen: set[Path], paths: List[Path]) -> None:
+    if path in seen:
+        return
+    seen.add(path)
+    paths.append(path)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate Gaussian09 inputs for ts_guesses_opt and optionally benchmark runtimes."
@@ -310,6 +321,21 @@ def main() -> None:
         action="store_true",
         help="Overwrite results CSV instead of append/update mode.",
     )
+    parser.add_argument(
+        "--include-existing",
+        action="store_true",
+        help="Allow reactions already present in the results CSV to be selected again.",
+    )
+    parser.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="Do not write a backup copy of the results CSV before updating.",
+    )
+    parser.add_argument(
+        "--print-created",
+        action="store_true",
+        help="Print paths for files written during this run.",
+    )
 
     args = parser.parse_args()
 
@@ -333,9 +359,25 @@ def main() -> None:
         else {}
     )
     ids = [item.strip() for item in args.ids.split(",")] if args.ids else None
-    selected = select_reactions(xyz_paths, baseline, args.all, args.top, ids)
+    existing_rows: Dict[str, Dict[str, str]] = {}
+    existing_fieldnames: List[str] = []
+    if not args.overwrite_results and results_csv.exists():
+        with results_csv.open(newline="") as handle:
+            reader = csv.DictReader(handle)
+            existing_fieldnames = reader.fieldnames or []
+            for row in reader:
+                name = row.get("reaction_name")
+                if name:
+                    existing_rows[name] = row
+    exclude_existing = None if args.include_existing else set(existing_rows)
+
+    selected = select_reactions(
+        xyz_paths, baseline, args.all, args.top, ids, exclude_existing
+    )
     if not selected:
-        raise SystemExit("No reactions selected; check --all/--top/--ids.")
+        raise SystemExit(
+            "No reactions selected; all candidates may already exist in results CSV."
+        )
 
     gjf_dir.mkdir(parents=True, exist_ok=True)
     if args.make_pbs:
@@ -343,7 +385,7 @@ def main() -> None:
     if args.run:
         log_dir.mkdir(parents=True, exist_ok=True)
 
-    fieldnames = [
+    default_fieldnames = [
         "reaction_name",
         "guess_xyz_path",
         "gjf_path",
@@ -362,39 +404,28 @@ def main() -> None:
         "baseline_gjf_nprocshared_max",
         "baseline_gjf_mem_bytes_max",
     ]
+    if existing_fieldnames:
+        fieldnames = list(existing_fieldnames)
+        for field in default_fieldnames:
+            if field not in fieldnames:
+                fieldnames.append(field)
+    else:
+        fieldnames = default_fieldnames
 
-    existing_rows: Dict[str, Dict[str, str]] = {}
-    if not args.overwrite_results and results_csv.exists():
-        with results_csv.open(newline="") as handle:
-            reader = csv.DictReader(handle)
-            for row in reader:
-                name = row.get("reaction_name")
-                if name:
-                    existing_rows[name] = row
+    written_paths: List[Path] = []
+    written_seen: set[Path] = set()
+
+    if results_csv.exists() and not args.no_backup:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        backup_path = results_csv.with_suffix(results_csv.suffix + f".bak_{timestamp}")
+        shutil.copy2(results_csv, backup_path)
+        _record_path(backup_path, written_seen, written_paths)
 
     new_rows: Dict[str, Dict[str, str]] = {}
     with results_csv.open("w", newline="") as handle:
-        fieldnames = [
-            "reaction_name",
-            "guess_xyz_path",
-            "gjf_path",
-            "job_dir",
-            "submit_sh_path",
-            "log_path",
-            "status",
-            "runtime_seconds",
-            "baseline_runtime_seconds",
-            "baseline_job_count",
-            "baseline_job_types",
-            "charge",
-            "multiplicity",
-            "baseline_pbs_ncpus_max",
-            "baseline_pbs_mem_bytes_max",
-            "baseline_gjf_nprocshared_max",
-            "baseline_gjf_mem_bytes_max",
-        ]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
+        _record_path(results_csv, written_seen, written_paths)
 
         for reaction_name, xyz_path in selected:
             base = baseline.get(reaction_name)
@@ -443,6 +474,7 @@ def main() -> None:
                 nprocshared=nproc,
                 link0=link0,
             )
+            _record_path(gjf_path, written_seen, written_paths)
             if args.make_pbs:
                 job_name = f"{args.pbs_job_prefix}{reaction_name}"
                 write_submit_sh(
@@ -452,10 +484,12 @@ def main() -> None:
                     ncpus=pbs_ncpus,
                     mem_bytes=pbs_mem_bytes,
                 )
+                _record_path(submit_path, written_seen, written_paths)
 
             status = "not_run"
             runtime = ""
             if args.run:
+                _record_path(log_path, written_seen, written_paths)
                 status, runtime_val = run_gaussian(args.g09_cmd, gjf_path, log_path)
                 runtime = f"{runtime_val:.3f}"
 
@@ -486,6 +520,11 @@ def main() -> None:
 
         for name in sorted(new_rows):
             writer.writerow(new_rows[name])
+
+    if args.print_created and written_paths:
+        print("Wrote files:")
+        for path in written_paths:
+            print(f"  {path}")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 import re
 
+from gaussian_parser import GaussianParser
+
 
 def _job_dirs(root: Path) -> List[Path]:
     dirs = []
@@ -41,6 +43,68 @@ def _remote_job_path(remote_base: str, job_name: str) -> str:
     return f"{remote_base.rstrip('/')}/{job_name}"
 
 
+def _remote_dir_exists(remote: str, path: str) -> bool:
+    try:
+        _ssh(remote, f"test -d {path} && echo OK")
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _remote_file_exists(remote: str, path: str) -> bool:
+    try:
+        _ssh(remote, f"test -f {path} && echo OK")
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def _remote_running_jobs(remote: str) -> Tuple[set[str], set[str]]:
+    try:
+        out = _ssh(remote, "/opt/pbs/bin/qstat -f -u $USER")
+    except subprocess.CalledProcessError:
+        return set(), set()
+    workdirs = set()
+    names = set()
+    current_vars: List[str] = []
+    in_var_list = False
+    for raw in out.splitlines():
+        line = raw.rstrip()
+        if line.startswith("Job Id:"):
+            in_var_list = False
+            current_vars = []
+            continue
+        if line.strip().startswith("Job_Name ="):
+            parts = line.split("=", 1)
+            if len(parts) == 2:
+                names.add(parts[1].strip())
+            continue
+        if line.strip().startswith("Variable_List ="):
+            in_var_list = True
+            current_vars = [line.split("=", 1)[1].strip()]
+            continue
+        if in_var_list and line.startswith((" ", "\t")):
+            current_vars.append(line.strip())
+            continue
+        if in_var_list and not line.startswith((" ", "\t")):
+            in_var_list = False
+            vars_joined = ",".join(current_vars)
+            for item in vars_joined.split(","):
+                if item.startswith("PBS_O_WORKDIR="):
+                    workdirs.add(item.split("=", 1)[1])
+            current_vars = []
+        if "PBS_O_WORKDIR=" in line:
+            for chunk in line.split(","):
+                if "PBS_O_WORKDIR=" in chunk:
+                    workdirs.add(chunk.split("PBS_O_WORKDIR=", 1)[1].strip())
+    if current_vars:
+        vars_joined = ",".join(current_vars)
+        for item in vars_joined.split(","):
+            if item.startswith("PBS_O_WORKDIR="):
+                workdirs.add(item.split("=", 1)[1])
+    return workdirs, names
+
+
 def sync_to_remote(job_dirs: Iterable[Path], remote: str, remote_base: str, verbose: bool) -> None:
     for job_dir in job_dirs:
         remote_path = _remote_job_path(remote_base, job_dir.name)
@@ -64,13 +128,24 @@ def submit_remote(
     verbose: bool,
 ) -> Dict[str, Dict[str, str]]:
     existing = _load_submit_log(submit_log) if submit_log else {}
+    running_workdirs, running_names = _remote_running_jobs(remote) if not resubmit else (set(), set())
     job_meta: Dict[str, Dict[str, str]] = {}
     for job_dir in job_dirs:
+        remote_path = _remote_job_path(remote_base, job_dir.name)
         if not resubmit:
             prior = existing.get(job_dir.name, {})
             if prior.get("job_id"):
                 continue
-        remote_path = _remote_job_path(remote_base, job_dir.name)
+            if remote_path in running_workdirs or job_dir.name in running_names:
+                if verbose:
+                    print(f"[submit] skip running job on server: {job_dir.name}")
+                continue
+            if _remote_file_exists(remote, f"{remote_path}/initial_time") or _remote_file_exists(
+                remote, f"{remote_path}/final_time"
+            ):
+                if verbose:
+                    print(f"[submit] skip job with existing time markers: {job_dir.name}")
+                continue
         if verbose:
             print(f"[submit] {job_dir.name} -> {remote_path}")
         out = _ssh(remote, f"cd {remote_path} && /usr/local/bin/qsub submit.sh && date +%s")
@@ -95,7 +170,16 @@ def sync_from_remote(job_dirs: Iterable[Path], remote: str, remote_base: str, ve
         remote_path = _remote_job_path(remote_base, job_dir.name)
         if verbose:
             print(f"[sync-from] {remote_path} -> {job_dir}")
-        _rsync(f"{remote}:{remote_path}/", f"{job_dir}/", verbose)
+        if not _remote_dir_exists(remote, remote_path):
+            if verbose:
+                print(f"[sync-from] skip missing remote dir: {remote_path}")
+            continue
+        try:
+            _rsync(f"{remote}:{remote_path}/", f"{job_dir}/", verbose)
+        except subprocess.CalledProcessError:
+            if verbose:
+                print(f"[sync-from] rsync failed for {remote_path}")
+            continue
 
 
 def _read_results(path: Path) -> Tuple[List[str], List[Dict[str, str]]]:
@@ -164,6 +248,10 @@ def _backfill_rows(
         "baseline_gjf_nprocshared_max",
         "baseline_gjf_mem_bytes_max",
         "baseline_note",
+        "baseline_opt_steps",
+        "baseline_opt_steps_source",
+        "new_opt_steps",
+        "new_opt_steps_source",
         "real_time_seconds",
         "job_id",
         "submit_epoch",
@@ -199,6 +287,10 @@ def _backfill_rows(
             "baseline_gjf_nprocshared_max": base.get("gjf_nprocshared", ""),
             "baseline_gjf_mem_bytes_max": base.get("gjf_mem_bytes", ""),
             "baseline_note": base.get("baseline_note", ""),
+            "baseline_opt_steps": base.get("opt_steps", ""),
+            "baseline_opt_steps_source": base.get("opt_steps_source", ""),
+            "new_opt_steps": "",
+            "new_opt_steps_source": "",
             "real_time_seconds": "",
             "job_id": "",
             "submit_epoch": "",
@@ -232,6 +324,7 @@ def update_real_time(
     remote_base: Optional[str],
     use_remote_times: bool,
     submit_log: Optional[Path],
+    baseline_csv: Optional[Path],
     verbose: bool,
 ) -> None:
     fieldnames, rows = _read_results(results_csv)
@@ -242,11 +335,20 @@ def update_real_time(
         extra_fields.append("job_id")
     if "submit_epoch" not in fieldnames:
         extra_fields.append("submit_epoch")
+    if "baseline_opt_steps" not in fieldnames:
+        extra_fields.append("baseline_opt_steps")
+    if "baseline_opt_steps_source" not in fieldnames:
+        extra_fields.append("baseline_opt_steps_source")
+    if "new_opt_steps" not in fieldnames:
+        extra_fields.append("new_opt_steps")
+    if "new_opt_steps_source" not in fieldnames:
+        extra_fields.append("new_opt_steps_source")
     if extra_fields:
         fieldnames = fieldnames + extra_fields
 
     job_index = {p.name: p for p in _job_dirs(job_root)}
     submit_index = _load_submit_log(submit_log) if submit_log else {}
+    baseline = _read_baseline(baseline_csv) if baseline_csv else {}
     for row in rows:
         job_dir = row.get("job_dir") or ""
         reaction_name = row.get("reaction_name") or ""
@@ -257,9 +359,25 @@ def update_real_time(
         final = path / "final_time"
         log_path = path / "input.log"
         normal_termination = False
+        max_steps_exceeded = False
+        parser = None
         if log_path.exists():
             log_text = log_path.read_text(errors="ignore")
             normal_termination = "Normal termination of Gaussian" in log_text
+            max_steps_exceeded = (
+                "Maximum number of optimization cycles exceeded" in log_text
+                or "Max steps exceeded" in log_text
+                or "Maximum number of optimization steps exceeded" in log_text
+            )
+            try:
+                parser = GaussianParser(str(log_path))
+                opt_steps = parser.opt_cycles
+                if opt_steps is not None:
+                    row["new_opt_steps"] = str(opt_steps)
+                    row["new_opt_steps_source"] = "gaussian_parser"
+            except Exception:
+                pass
+        skip_time = False
         if use_remote_times:
             if not (remote and remote_base):
                 continue
@@ -271,49 +389,63 @@ def update_real_time(
                     print(f"[time] {reaction_name} (remote)")
                 init_ts = _ssh(remote, f"stat -c %Y {remote_path}/initial_time")
                 fin_ts = _ssh(remote, f"stat -c %Y {remote_path}/final_time")
-                if log_path.exists():
-                    if not normal_termination:
-                        if verbose:
-                            print(f"[time] {reaction_name} no normal termination in input.log")
-                        continue
-                elapsed = float(fin_ts.strip()) - float(init_ts.strip())
-                row["real_time_seconds"] = f"{elapsed:.3f}"
-                if verbose:
-                    print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
+                if log_path.exists() and not normal_termination:
+                    if verbose:
+                        print(f"[time] {reaction_name} no normal termination in input.log")
+                    skip_time = True
+                if not skip_time:
+                    elapsed = float(fin_ts.strip()) - float(init_ts.strip())
+                    row["real_time_seconds"] = f"{elapsed:.3f}"
+                    if verbose:
+                        print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
             except subprocess.CalledProcessError:
                 if verbose:
                     print(f"[time] {reaction_name} missing initial_time/final_time on remote")
                 if initial.exists() and final.exists():
                     if verbose:
                         print(f"[time] {reaction_name} falling back to local times")
-                    if log_path.exists():
-                        if not normal_termination:
-                            if verbose:
-                                print(f"[time] {reaction_name} no normal termination in input.log")
-                            continue
-                    elapsed = final.stat().st_mtime - initial.stat().st_mtime
-                    row["real_time_seconds"] = f"{elapsed:.3f}"
-                    if verbose:
-                        print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
+                    if log_path.exists() and not normal_termination:
+                        if verbose:
+                            print(f"[time] {reaction_name} no normal termination in input.log")
+                        skip_time = True
+                    if not skip_time:
+                        elapsed = final.stat().st_mtime - initial.stat().st_mtime
+                        row["real_time_seconds"] = f"{elapsed:.3f}"
+                        if verbose:
+                            print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
+                elif normal_termination and parser is not None:
+                    fallback = parser.real_time_seconds
+                    if fallback is not None:
+                        row["real_time_seconds"] = f"{fallback:.3f}"
+                        if verbose:
+                            print(f"[time] {reaction_name} elapsed={fallback:.3f}s (log-derived)")
         else:
             if not (initial.exists() and final.exists()):
                 if verbose:
                     print(f"[time] {reaction_name} missing initial_time/final_time locally")
-                continue
+                if normal_termination and parser is not None:
+                    fallback = parser.real_time_seconds
+                    if fallback is not None:
+                        row["real_time_seconds"] = f"{fallback:.3f}"
+                        if verbose:
+                            print(f"[time] {reaction_name} elapsed={fallback:.3f}s (log-derived)")
+                skip_time = True
             if verbose:
                 print(f"[time] {reaction_name} (local)")
-            if log_path.exists():
-                if not normal_termination:
-                    if verbose:
-                        print(f"[time] {reaction_name} no normal termination in input.log")
-                    continue
-            elapsed = final.stat().st_mtime - initial.stat().st_mtime
-            row["real_time_seconds"] = f"{elapsed:.3f}"
-            if verbose:
-                print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
+            if log_path.exists() and not normal_termination:
+                if verbose:
+                    print(f"[time] {reaction_name} no normal termination in input.log")
+                skip_time = True
+            if not skip_time:
+                elapsed = final.stat().st_mtime - initial.stat().st_mtime
+                row["real_time_seconds"] = f"{elapsed:.3f}"
+                if verbose:
+                    print(f"[time] {reaction_name} elapsed={elapsed:.3f}s")
 
         if normal_termination:
             row["status"] = "ok"
+        elif max_steps_exceeded:
+            row["status"] = "failed_max_steps"
         elif final.exists():
             row["status"] = "failed"
         submit_row = submit_index.get(reaction_name)
@@ -324,6 +456,13 @@ def update_real_time(
                 row["job_id"] = job_id
             if submit_epoch:
                 row["submit_epoch"] = submit_epoch
+
+        base = baseline.get(reaction_name)
+        if base:
+            if base.get("opt_steps"):
+                row["baseline_opt_steps"] = base.get("opt_steps", "")
+            if base.get("opt_steps_source"):
+                row["baseline_opt_steps_source"] = base.get("opt_steps_source", "")
 
     _write_results(results_csv, fieldnames, rows)
 
@@ -424,6 +563,7 @@ def main() -> None:
             args.remote_base,
             args.use_remote_times,
             Path(args.submit_log),
+            Path(args.baseline_csv),
             verbose,
         )
 

@@ -1,0 +1,197 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Iterable, Optional
+
+from ase import Atoms
+from ase.constraints import Hookean
+from ase.optimize import BFGS
+from ase.optimize.sciopt import OptimizerConvergenceError, SciPyFminBFGS, SciPyFminCG
+from xtb.ase.calculator import XTB
+
+
+@dataclass(frozen=True)
+class XYZSpec:
+    symbols: tuple[str, ...]
+    isotopes: tuple[int, ...]
+    coords: tuple[tuple[float, float, float], ...]
+
+
+@dataclass(frozen=True)
+class ConstraintSpec:
+    atom_indices_1based: tuple[int, int]
+    distance: float
+
+
+def build_atoms(xyz: XYZSpec) -> Atoms:
+    return Atoms(xyz.symbols, xyz.coords)
+
+
+def _build_constraints(constraints: Iterable[ConstraintSpec], k: float = 15.0) -> list:
+    hooks = []
+    for c in constraints:
+        a1, a2 = c.atom_indices_1based
+        hooks.append(Hookean(a1=a1 - 1, a2=a2 - 1, k=k, rt=c.distance))
+    return hooks
+
+
+def _optimizer_sequence(engine: str) -> list[str]:
+    e = (engine or "").strip().lower()
+    alias = {
+        "scipyfminbfgs": "scipyfminbfgs",
+        "scipy-bfgs": "scipyfminbfgs",
+        "scipy": "scipyfminbfgs",
+        "bfgs": "bfgs",
+        "cg": "scipyfmincg",
+        "scipyfmincg": "scipyfmincg",
+    }
+    preferred = alias.get(e, "scipyfminbfgs")
+
+    order = ["scipyfminbfgs", "bfgs", "scipyfmincg"]
+    order.remove(preferred)
+    return [preferred] + order
+
+
+def multiplicity_to_uhf_safe(multiplicity: int) -> int:
+    uhf = multiplicity - 1
+    if uhf < 0:
+        raise ValueError(f"Invalid multiplicity: {multiplicity}")
+    return uhf
+
+
+def run_opt(
+    xyz: XYZSpec,
+    constraints: Optional[Iterable[ConstraintSpec]] = None,
+    fmax: float = 0.05,
+    steps: Optional[int] = 400,
+    engine: str = "SciPyFminBFGS",
+    model=None,
+    use_xtb: bool = True,
+    charge: int = 0,
+    multiplicity: int = 1,
+    diagnostics: Optional[dict] = None,
+    purpose: str = "default",
+) -> Optional[XYZSpec]:
+    """
+    Run a geometry optimization calculation with optional constraints.
+    Converges when all forces are less than ``fmax`` or ``steps`` exceeded.
+    """
+    steps = steps or 400
+    atoms = build_atoms(xyz)
+
+    if use_xtb:
+        uhf = multiplicity_to_uhf_safe(multiplicity)
+        atoms.set_calculator(XTB(method="GFN2-xTB", charge=charge, uhf=uhf))
+    elif model is not None:
+        atoms.set_calculator(model.ase())
+    else:
+        raise ValueError("Either set use_xtb=True or pass a torchani model.")
+
+    engine_dict = {"bfgs": BFGS, "scipyfminbfgs": SciPyFminBFGS, "scipyfmincg": SciPyFminCG}
+    def _run_one_optimizer_stack(local_fmax: float, local_steps: int) -> bool:
+        for opt_engine_name in _optimizer_sequence(engine):
+            opt_engine = engine_dict[opt_engine_name]
+            opt = opt_engine(atoms, logfile=None)
+            if diagnostics is not None:
+                diagnostics["last_engine"] = opt_engine_name
+                diagnostics["last_local_fmax"] = float(local_fmax)
+                diagnostics["last_local_steps"] = int(local_steps)
+                diagnostics["optimizer_attempts"] = int(diagnostics.get("optimizer_attempts", 0)) + 1
+            try:
+                opt.run(fmax=local_fmax, steps=local_steps)
+            except (NotImplementedError, OptimizerConvergenceError):
+                continue
+            forces = atoms.get_forces()
+            fmax_actual = ((forces * forces).sum(axis=1) ** 0.5).max()
+            if diagnostics is not None:
+                diagnostics["last_fmax_actual"] = float(fmax_actual)
+                if hasattr(opt, "nsteps"):
+                    diagnostics["last_optimizer_nsteps"] = int(opt.nsteps)
+            if fmax_actual <= local_fmax:
+                return True
+        return False
+
+    if constraints is not None and use_xtb:
+        if diagnostics is not None:
+            diagnostics["purpose"] = purpose
+            diagnostics["used_constraints"] = True
+        purpose_key = (purpose or "").strip().lower()
+
+        if diagnostics is not None:
+            diagnostics["k_stage"] = 15.0
+            diagnostics["last_stage"] = "k=15"
+        atoms.set_constraint(_build_constraints(constraints, k=15.0))
+        stage_ok = _run_one_optimizer_stack(0.10, min(200, steps))
+        if diagnostics is not None:
+            diagnostics["last_stage_converged"] = bool(stage_ok)
+
+        if diagnostics is not None:
+            diagnostics["k_stage"] = 3.0
+            diagnostics["last_stage"] = "k=3"
+        atoms.set_constraint(_build_constraints(constraints, k=3.0))
+        if purpose_key in ("gaussian", "gaussian_ts_seed", "g09", "ts_seed"):
+            stage_ok = _run_one_optimizer_stack(0.10, min(120, steps))
+            if diagnostics is not None:
+                diagnostics["last_stage_converged"] = bool(stage_ok)
+
+            coords = atoms.get_positions()
+            max_dev = 0.0
+            for spec in constraints:
+                a1, a2 = spec.atom_indices_1based
+                dist = float(((coords[a1 - 1] - coords[a2 - 1]) ** 2).sum() ** 0.5)
+                max_dev = max(max_dev, abs(dist - spec.distance))
+            if max_dev > 0.20:
+                if diagnostics is not None:
+                    diagnostics["k_stage"] = 6.0
+                    diagnostics["last_stage"] = "k=6"
+                atoms.set_constraint(_build_constraints(constraints, k=6.0))
+                stage_ok = _run_one_optimizer_stack(0.12, min(60, steps))
+                if diagnostics is not None:
+                    diagnostics["last_stage_converged"] = bool(stage_ok)
+        else:
+            stage_ok = _run_one_optimizer_stack(fmax, steps)
+            if diagnostics is not None:
+                diagnostics["last_stage_converged"] = bool(stage_ok)
+            if not stage_ok:
+                if diagnostics is not None:
+                    diagnostics["k_stage"] = 1.0
+                    diagnostics["last_stage"] = "k=1"
+                atoms.set_constraint(_build_constraints(constraints, k=1.0))
+                stage_ok = _run_one_optimizer_stack(max(fmax, 0.08), 200)
+                if diagnostics is not None:
+                    diagnostics["last_stage_converged"] = bool(stage_ok)
+                if not stage_ok:
+                    return None
+    else:
+        if constraints is not None:
+            atoms.set_constraint(_build_constraints(constraints))
+        if diagnostics is not None:
+            diagnostics["purpose"] = purpose
+            diagnostics["used_constraints"] = constraints is not None
+            diagnostics["last_stage"] = "unconstrained"
+        stage_ok = _run_one_optimizer_stack(fmax, steps)
+        if diagnostics is not None:
+            diagnostics["last_stage_converged"] = bool(stage_ok)
+        if not stage_ok:
+            return None
+
+    if diagnostics is not None:
+        forces = atoms.get_forces()
+        fmax_actual = ((forces * forces).sum(axis=1) ** 0.5).max()
+        diagnostics["fmax_actual"] = float(fmax_actual)
+        if constraints is not None:
+            coords = atoms.get_positions()
+            max_dev = None
+            for spec in constraints:
+                a1, a2 = spec.atom_indices_1based
+                dist = float(((coords[a1 - 1] - coords[a2 - 1]) ** 2).sum() ** 0.5)
+                dev = abs(dist - spec.distance)
+                max_dev = dev if max_dev is None else max(max_dev, dev)
+            diagnostics["max_constraint_deviation"] = max_dev
+
+    opt_xyz = XYZSpec(
+        coords=tuple(map(tuple, atoms.get_positions().tolist())),
+        isotopes=xyz.isotopes,
+        symbols=xyz.symbols,
+    )
+    return opt_xyz

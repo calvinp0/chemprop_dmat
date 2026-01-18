@@ -15,6 +15,9 @@ python scripts/ts_g09_benchmark.py --top 5 --make-pbs
 
 # Overwrite the results CSV if you really want a fresh file
 python scripts/ts_g09_benchmark.py --top 5 --make-pbs --overwrite-results
+
+# Include reactions already present in results CSV (rerun selection)
+python scripts/ts_g09_benchmark.py --top 5 --make-pbs --include-existing
 ```
 
 ## Notes

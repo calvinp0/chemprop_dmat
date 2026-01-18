@@ -46,6 +46,35 @@ def _parse_properties(lines: List[str], start: int) -> Dict[str, str]:
     return props
 
 
+def _parse_int_prop(props: Dict[str, str], keys: Iterable[str]) -> Optional[int]:
+    for key in keys:
+        value = props.get(key, "")
+        if not value:
+            continue
+        try:
+            return int(float(value))
+        except ValueError:
+            return None
+    return None
+
+
+def _select_charge_multiplicity(ts: Optional[Dict], r1h: Dict, r2h: Dict) -> Tuple[Optional[int], Optional[int]]:
+    blocks = [ts, r1h, r2h]
+    charge = None
+    multiplicity = None
+    for block in blocks:
+        if not block:
+            continue
+        props = block.get("props", {})
+        if charge is None:
+            charge = _parse_int_prop(props, ("charge", "formal_charge"))
+        if multiplicity is None:
+            multiplicity = _parse_int_prop(props, ("multiplicity", "spin_multiplicity"))
+        if charge is not None and multiplicity is not None:
+            break
+    return charge, multiplicity
+
+
 def _parse_sdf_block(block: str) -> Optional[Dict]:
     lines = block.strip("\n").splitlines()
     if len(lines) < 3:
@@ -400,6 +429,13 @@ def build_ts_guess(
                     for out_idx, entry in enumerate(remapped):
                         entry["output_index"] = out_idx
                     mapping_info = {"roles": roles, "atoms": remapped}
+
+    if mapping_info is not None:
+        charge, multiplicity = _select_charge_multiplicity(ts, r1h, r2h)
+        if charge is not None:
+            mapping_info["charge"] = charge
+        if multiplicity is not None:
+            mapping_info["multiplicity"] = multiplicity
 
     return ts_guess, mapping_info, swapped
 

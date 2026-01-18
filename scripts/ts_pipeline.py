@@ -64,6 +64,13 @@ def _init_db(db_path: Path) -> sqlite3.Connection:
             engine TEXT,
             fmax REAL,
             steps INTEGER,
+            charge INTEGER,
+            multiplicity INTEGER,
+            fmax_actual REAL,
+            max_constraint_deviation REAL,
+            ah_dist REAL,
+            hb_dist REAL,
+            ahb_angle REAL,
             status TEXT,
             error TEXT,
             constraints_json_path TEXT
@@ -74,12 +81,29 @@ def _init_db(db_path: Path) -> sqlite3.Connection:
     columns = {row[1] for row in cur.fetchall()}
     if "constraints_json_path" not in columns:
         cur.execute("ALTER TABLE ts_optimizations ADD COLUMN constraints_json_path TEXT")
+    if "charge" not in columns:
+        cur.execute("ALTER TABLE ts_optimizations ADD COLUMN charge INTEGER")
+    if "multiplicity" not in columns:
+        cur.execute("ALTER TABLE ts_optimizations ADD COLUMN multiplicity INTEGER")
+    if "fmax_actual" not in columns:
+        cur.execute("ALTER TABLE ts_optimizations ADD COLUMN fmax_actual REAL")
+    if "max_constraint_deviation" not in columns:
+        cur.execute("ALTER TABLE ts_optimizations ADD COLUMN max_constraint_deviation REAL")
+    if "ah_dist" not in columns:
+        cur.execute("ALTER TABLE ts_optimizations ADD COLUMN ah_dist REAL")
+    if "hb_dist" not in columns:
+        cur.execute("ALTER TABLE ts_optimizations ADD COLUMN hb_dist REAL")
+    if "ahb_angle" not in columns:
+        cur.execute("ALTER TABLE ts_optimizations ADD COLUMN ahb_angle REAL")
     conn.commit()
     return conn
 
 
 def _latest_run_id(conn: sqlite3.Connection) -> Optional[str]:
     cur = conn.cursor()
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='runs'")
+    if cur.fetchone() is None:
+        return None
     cur.execute("SELECT run_id FROM runs ORDER BY created_at DESC LIMIT 1")
     row = cur.fetchone()
     return row[0] if row else None
@@ -129,6 +153,99 @@ def _load_ts_props(props_path: Path) -> Optional[dict]:
         return json.loads(props_path.read_text())
     except Exception:
         return None
+
+
+def _parse_int_value(value: str, allow_negative: bool) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        parsed = int(float(str(value).strip()))
+    except ValueError:
+        return None
+    if parsed < 0 and not allow_negative:
+        return None
+    return parsed
+
+
+def _parse_props_int(props: dict, keys: tuple[str, ...], allow_negative: bool) -> Optional[int]:
+    for key in keys:
+        if key in props:
+            parsed = _parse_int_value(props.get(key), allow_negative=allow_negative)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _parse_sdf_props_block(block: str) -> dict:
+    props: dict[str, str] = {}
+    lines = block.splitlines()
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        if line.startswith(">") and "<" in line and ">" in line:
+            key = line.split("<", 1)[1].split(">", 1)[0].strip().lower()
+            i += 1
+            values = []
+            while i < n and lines[i].strip() != "":
+                values.append(lines[i].rstrip())
+                i += 1
+            props[key] = "\n".join(values).strip()
+        else:
+            i += 1
+    return props
+
+
+def _charge_multiplicity_from_sdf(sdf_path: Path) -> Tuple[Optional[int], Optional[int]]:
+    text = sdf_path.read_text(errors="ignore")
+    blocks = [blk for blk in text.split("$$$$") if blk.strip()]
+    by_type: dict[str, dict] = {}
+    for block in blocks:
+        props = _parse_sdf_props_block(block)
+        block_type = props.get("type", "").strip().lower()
+        if block_type:
+            by_type[block_type] = props
+    ordered = [by_type.get("ts"), by_type.get("r1h"), by_type.get("r2h")]
+    charge = None
+    multiplicity = None
+    for props in ordered:
+        if not props:
+            continue
+        if charge is None:
+            charge = _parse_props_int(props, ("charge", "formal_charge"), allow_negative=True)
+        if multiplicity is None:
+            multiplicity = _parse_props_int(props, ("multiplicity", "spin_multiplicity"), allow_negative=False)
+        if charge is not None and multiplicity is not None:
+            break
+    return charge, multiplicity
+
+
+def _charge_multiplicity_for_guess(
+    guess_xyz: Path,
+    sdf_dir: Optional[Path],
+    default_charge: int,
+    default_multiplicity: int,
+) -> Tuple[int, int]:
+    charge = None
+    multiplicity = None
+    props = _load_ts_props(guess_xyz.with_suffix(".ts_props.json"))
+    if props:
+        charge = _parse_props_int(props, ("charge",), allow_negative=True)
+        multiplicity = _parse_props_int(props, ("multiplicity",), allow_negative=False)
+    if (charge is None or multiplicity is None) and sdf_dir is not None:
+        rxn_name = guess_xyz.stem.replace("_ts_guess", "")
+        sdf_path = sdf_dir / f"{rxn_name}.sdf"
+        if sdf_path.exists():
+            sdf_charge, sdf_multiplicity = _charge_multiplicity_from_sdf(sdf_path)
+            if charge is None:
+                charge = sdf_charge
+            if multiplicity is None:
+                multiplicity = sdf_multiplicity
+    if charge is None:
+        charge = default_charge
+    if multiplicity is None:
+        multiplicity = default_multiplicity
+    return charge, multiplicity
 
 
 def _build_constraints_from_props(xyz: XYZSpec, props: dict) -> list[ConstraintSpec]:
@@ -182,6 +299,37 @@ def _constraints_for_guess(guess_xyz: Path, xyz: XYZSpec) -> Tuple[Optional[list
     constraints_path = guess_xyz.with_suffix(".hook_constraints.json")
     _write_constraints_json(constraints_path, constraint_specs, props_path.name)
     return constraint_specs, constraints_path
+
+
+def _angle_metrics_from_props(xyz: XYZSpec, props: dict) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    atoms = props.get("atoms", [])
+    role_to_output: dict[str, int] = {}
+    for atom in atoms:
+        role = atom.get("ts_role")
+        out_idx = atom.get("output_index")
+        if role and isinstance(out_idx, int):
+            role_to_output[role] = out_idx
+
+    idx_a = role_to_output.get("*1")
+    idx_h = role_to_output.get("*2")
+    idx_b = role_to_output.get("*3")
+    if idx_a is None or idx_h is None or idx_b is None:
+        return None, None, None
+
+    coords = np.array(xyz.coords, dtype=float)
+    a = coords[idx_a]
+    h = coords[idx_h]
+    b = coords[idx_b]
+    ah_vec = a - h
+    hb_vec = b - h
+    ah_dist = float(np.linalg.norm(ah_vec))
+    hb_dist = float(np.linalg.norm(hb_vec))
+    denom = np.linalg.norm(ah_vec) * np.linalg.norm(hb_vec)
+    if denom == 0.0:
+        return ah_dist, hb_dist, None
+    cosang = np.clip(np.dot(ah_vec, hb_vec) / denom, -1.0, 1.0)
+    ahb_angle = float(np.degrees(np.arccos(cosang)))
+    return ah_dist, hb_dist, ahb_angle
 
 
 def _append_opt_failure(log_path: Path, rxn_name: str, guess_xyz: Path, error: str) -> None:
@@ -283,10 +431,32 @@ def optimize_one(
     steps: int,
     engine: str,
     use_xtb: bool,
+    charge: int,
+    multiplicity: int,
+    sdf_dir: Optional[Path],
     constraints: Optional[Iterable[ConstraintSpec]] = None,
-) -> Tuple[Optional[Path], Optional[str], Optional[Path]]:
+) -> Tuple[
+    Optional[Path],
+    Optional[str],
+    Optional[Path],
+    int,
+    int,
+    Optional[float],
+    Optional[float],
+    Optional[float],
+    Optional[float],
+    Optional[float],
+]:
     xyz = _read_xyz(guess_xyz)
     auto_constraints, constraints_path = _constraints_for_guess(guess_xyz, xyz)
+    resolved_charge, resolved_multiplicity = _charge_multiplicity_for_guess(
+        guess_xyz,
+        sdf_dir=sdf_dir,
+        default_charge=charge,
+        default_multiplicity=multiplicity,
+    )
+    diagnostics: dict = {}
+    props = _load_ts_props(guess_xyz.with_suffix(".ts_props.json"))
     try:
         opt = run_opt(
             xyz=xyz,
@@ -295,14 +465,53 @@ def optimize_one(
             steps=steps,
             engine=engine,
             use_xtb=use_xtb,
+            charge=resolved_charge,
+            multiplicity=resolved_multiplicity,
+            diagnostics=diagnostics,
         )
     except Exception as exc:
-        return None, str(exc), constraints_path
+        return (
+            None,
+            str(exc),
+            constraints_path,
+            resolved_charge,
+            resolved_multiplicity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
     if opt is None:
-        return None, "optimizer_failed", constraints_path
+        return (
+            None,
+            "optimizer_failed",
+            constraints_path,
+            resolved_charge,
+            resolved_multiplicity,
+            diagnostics.get("fmax_actual"),
+            diagnostics.get("max_constraint_deviation"),
+            None,
+            None,
+            None,
+        )
+    ah_dist, hb_dist, ahb_angle = (None, None, None)
+    if props:
+        ah_dist, hb_dist, ahb_angle = _angle_metrics_from_props(opt, props)
     out_path = out_dir / guess_xyz.name.replace("_ts_guess", "_ts_opt")
     _write_xyz(out_path, opt)
-    return out_path, None, constraints_path
+    return (
+        out_path,
+        None,
+        constraints_path,
+        resolved_charge,
+        resolved_multiplicity,
+        diagnostics.get("fmax_actual"),
+        diagnostics.get("max_constraint_deviation"),
+        ah_dist,
+        hb_dist,
+        ahb_angle,
+    )
 
 
 def record_opt(
@@ -314,6 +523,13 @@ def record_opt(
     engine: str,
     fmax: float,
     steps: int,
+    charge: int,
+    multiplicity: int,
+    fmax_actual: Optional[float],
+    max_constraint_deviation: Optional[float],
+    ah_dist: Optional[float],
+    hb_dist: Optional[float],
+    ahb_angle: Optional[float],
     status: str,
     error: Optional[str],
     constraints_json_path: Optional[str],
@@ -322,8 +538,10 @@ def record_opt(
     cur.execute(
         """
         INSERT INTO ts_optimizations (
-            merge_run_id, created_at, rxn_name, guess_xyz_path, opt_xyz_path, engine, fmax, steps, status, error, constraints_json_path
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            merge_run_id, created_at, rxn_name, guess_xyz_path, opt_xyz_path, engine, fmax, steps,
+            charge, multiplicity, fmax_actual, max_constraint_deviation, ah_dist, hb_dist, ahb_angle,
+            status, error, constraints_json_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             merge_run_id,
@@ -334,6 +552,13 @@ def record_opt(
             engine,
             fmax,
             steps,
+            charge,
+            multiplicity,
+            fmax_actual,
+            max_constraint_deviation,
+            ah_dist,
+            hb_dist,
+            ahb_angle,
             status,
             error,
             constraints_json_path,
@@ -353,10 +578,17 @@ def main() -> None:
     p.add_argument("--swap-by-ts", action="store_true")
     p.add_argument("--remap-to-ts", action="store_true")
     p.add_argument("--optimize", action="store_true", help="Run geometry optimization on guesses.")
-    p.add_argument("--opt-fmax", type=float, default=0.001)
-    p.add_argument("--opt-steps", type=int, default=1000)
+    p.add_argument("--opt-fmax", type=float, default=0.05)
+    p.add_argument("--opt-steps", type=int, default=400)
     p.add_argument("--opt-engine", type=str, default="SciPyFminBFGS")
     p.add_argument("--opt-use-xtb", action="store_true", help="Use xTB (GFN2-xTB) for optimization.")
+    p.add_argument("--opt-charge", type=int, default=0, help="Total charge for xTB calculations.")
+    p.add_argument(
+        "--opt-multiplicity",
+        type=int,
+        default=1,
+        help="Spin multiplicity (M=2S+1) for xTB; converted to UHF via M-1.",
+    )
     p.add_argument("--limit", type=int, default=None, help="Optional limit on number of SDFs to process.")
     args = p.parse_args()
 
@@ -402,13 +634,27 @@ def main() -> None:
         for guess_path in guess_paths:
             _LOG.warning("Optimizing guess %s", guess_path.name)
             rxn_name = guess_path.stem.replace("_ts_guess", "")
-            opt_xyz_path, error, constraints_path = optimize_one(
+            (
+                opt_xyz_path,
+                error,
+                constraints_path,
+                resolved_charge,
+                resolved_multiplicity,
+                fmax_actual,
+                max_constraint_deviation,
+                ah_dist,
+                hb_dist,
+                ahb_angle,
+            ) = optimize_one(
                 guess_xyz=guess_path,
                 out_dir=opt_dir,
                 fmax=args.opt_fmax,
                 steps=args.opt_steps,
                 engine=args.opt_engine,
                 use_xtb=args.opt_use_xtb,
+                charge=args.opt_charge,
+                multiplicity=args.opt_multiplicity,
+                sdf_dir=Path(args.sdf_dir),
                 constraints=None,
             )
             status = "ok" if opt_xyz_path else "failed"
@@ -423,6 +669,13 @@ def main() -> None:
                 args.opt_engine,
                 args.opt_fmax,
                 args.opt_steps,
+                resolved_charge,
+                resolved_multiplicity,
+                fmax_actual,
+                max_constraint_deviation,
+                ah_dist,
+                hb_dist,
+                ahb_angle,
                 status,
                 error,
                 str(constraints_path.resolve()) if constraints_path else None,

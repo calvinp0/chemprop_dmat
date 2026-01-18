@@ -27,6 +27,7 @@ already has a `job_id` in the log. Use `--resubmit` to force re-submission.
 - `--update-results`: update `real_time_seconds` in `ts_guesses_g09_results.csv`
 - `--use-remote-times`: compute times from server-side `initial_time`/`final_time`
 - `--backfill-results`: add missing rows for any job folders not in results CSV
+- `--baseline-csv`: baseline CSV used for backfill + baseline opt steps
 
 ## Pull results + update runtimes
 
