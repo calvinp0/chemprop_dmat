@@ -5,6 +5,7 @@ from typing import Iterable, Optional
 
 from ase import Atoms
 from ase.constraints import FixInternals, Hookean
+from custom_constraints import AdaptiveHookean
 from ase.optimize import BFGS
 from ase.optimize.sciopt import Converged, OptimizerConvergenceError, SciPyFminBFGS, SciPyFminCG
 from xtb.ase.calculator import XTB
@@ -42,11 +43,10 @@ def build_atoms(xyz: XYZSpec) -> Atoms:
 
 def _build_constraints(constraints: Iterable[ConstraintSpec]) -> list:
     hooks = []
-    bonds = []
     for c in constraints:
         a1, a2 = c.atom_indices_1based
-        hooks.append(Hookean(a1=a1 - 1, a2=a2 - 1, k=15.0, rt=c.distance))
-    return [*hooks, FixInternals(bonds=bonds)]
+        hooks.append(AdaptiveHookean(a1=a1 - 1, a2=a2 - 1, k_base=15.0, rt=c.distance, scaling_factor=8.0))
+    return [*hooks]
 
 
 def multiplicity_to_uhf(multiplicity: int) -> int:
